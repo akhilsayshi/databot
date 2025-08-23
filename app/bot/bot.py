@@ -1508,16 +1508,37 @@ async def remove_command(ctx: commands.Context, video_id: str):
 
 def main() -> None:
     """Main function to run the bot"""
-    if not settings.discord_bot_token:
-        raise ValueError("DISCORD_BOT_TOKEN not set")
+    # Validate configuration first
+    try:
+        settings.validate()
+    except SystemExit:
+        # Configuration validation already printed error and exited
+        return
     
-    if not settings.youtube_api_key:
-        raise ValueError("YOUTUBE_API_KEY not set")
+    # Additional token validation
+    if not settings.discord_bot_token.startswith("MT"):
+        raise ValueError("Invalid Discord bot token format. Token should start with 'MT'")
+    
+    if len(settings.discord_bot_token) < 50:
+        raise ValueError("Discord bot token appears to be too short. Please check your token.")
     
     bot_logger.info("Starting DataBot...")
     
     try:
         bot.run(settings.discord_bot_token)
+    except discord.errors.LoginFailure as e:
+        bot_logger.error(f"Discord login failed: {e}")
+        print("❌ Discord login failed!")
+        print("🔧 This usually means:")
+        print("   1. Your DISCORD_BOT_TOKEN is invalid or expired")
+        print("   2. The token is not set correctly in Render dashboard")
+        print("   3. The bot application was deleted or reset")
+        print("\n💡 How to fix:")
+        print("   1. Go to Discord Developer Portal")
+        print("   2. Reset your bot token")
+        print("   3. Update DISCORD_BOT_TOKEN in Render dashboard")
+        print("   4. Redeploy the service")
+        raise
     except Exception as e:
         bot_logger.error(f"Failed to start bot: {e}")
         raise
