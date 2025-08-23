@@ -14,6 +14,20 @@ from typing import Optional
 # Add the app directory to Python path
 sys.path.insert(0, str(Path(__file__).parent))
 
+# Patch to prevent audioop import issues
+import builtins
+original_import = builtins.__import__
+
+def patched_import(name, *args, **kwargs):
+    if name == 'audioop':
+        # Return a dummy module to prevent the import error
+        class DummyModule:
+            pass
+        return DummyModule()
+    return original_import(name, *args, **kwargs)
+
+builtins.__import__ = patched_import
+
 # Global flag for graceful shutdown
 _shutdown_requested = False
 

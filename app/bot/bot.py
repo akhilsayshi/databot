@@ -11,8 +11,13 @@ from datetime import datetime, timezone
 from typing import Optional
 from functools import wraps
 
+# Import discord without voice support to avoid audioop dependency
 import discord
 from discord.ext import commands
+
+# Disable voice support to avoid audioop import
+discord.VoiceClient = None
+
 from sqlalchemy import select, and_, func
 from sqlalchemy.orm import joinedload
 from sqlalchemy.exc import SQLAlchemyError
