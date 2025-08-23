@@ -205,5 +205,3 @@ def get_database_stats() -> dict:
             "error_type": type(e).__name__
         })
         return {}
-
-
