@@ -61,6 +61,27 @@ def error_handler(func):
     return wrapper
 
 
+def require_clipper_role():
+    """Decorator to require clipper role for commands"""
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(ctx: commands.Context, *args, **kwargs):
+            # Check if user has clipper role
+            clipper_role = discord.utils.get(ctx.guild.roles, name="clipper")
+            if not clipper_role or clipper_role not in ctx.author.roles:
+                embed = discord.Embed(
+                    title="🔒 Access Denied",
+                    description="You need to register first to use this command!\n\nUse `!register` to read the rules and get access to all commands.",
+                    color=0xff6b35
+                )
+                await ctx.send(embed=embed)
+                return
+            
+            return await func(ctx, *args, **kwargs)
+        return wrapper
+    return decorator
+
+
 def generate_verification_code(length: int = 6) -> str:
     """Generate a random verification code"""
     return "".join(random.choices(string.ascii_uppercase + string.digits, k=length))
@@ -127,6 +148,7 @@ async def help_command(ctx: commands.Context):
         name="📋 Core Commands",
         value=(
             "`!help` - Show this help message\n"
+            "`!register` - Register to get clipper role and access\n"
             "`!verify <url>` - Verify your YouTube channel\n"
             "`!done` - Complete verification after adding code\n"
             "`!add <url>` - Add a video from your verified channel"
@@ -160,6 +182,7 @@ async def help_command(ctx: commands.Context):
     embed.add_field(
         name="💡 Tips",
         value=(
+            "• **Start with `!register` to get access to all commands**\n"
             "• Use `!verify <url> automatic` for auto-tracking all videos\n"
             "• Use `!verify <url> manual` for manual video tracking\n"
             "• Add the verification code to your channel description\n"
@@ -175,8 +198,155 @@ async def help_command(ctx: commands.Context):
     await ctx.send(embed=embed)
 
 
+@bot.command(name="register")
+@error_handler
+async def register_command(ctx: commands.Context):
+    """Register to get clipper role and access to all commands"""
+    
+    # Check if user already has clipper role
+    clipper_role = discord.utils.get(ctx.guild.roles, name="clipper")
+    if clipper_role and clipper_role in ctx.author.roles:
+        embed = discord.Embed(
+            title="✅ Already Registered",
+            description="You already have the clipper role and can use all commands!",
+            color=0x00ff00
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    # Create clipper role if it doesn't exist
+    if not clipper_role:
+        try:
+            clipper_role = await ctx.guild.create_role(
+                name="clipper",
+                color=discord.Color.blue(),
+                reason="DataBot registration role"
+            )
+            bot_logger.info(f"Created clipper role in guild {ctx.guild.name}")
+        except discord.Forbidden:
+            raise ValueError("Bot doesn't have permission to create roles. Please ask an admin to create a 'clipper' role.")
+    
+    # Assign role to user
+    try:
+        await ctx.author.add_roles(clipper_role)
+        bot_logger.info(f"Assigned clipper role to {ctx.author.display_name}")
+    except discord.Forbidden:
+        raise ValueError("Bot doesn't have permission to assign roles. Please ask an admin to assign the 'clipper' role manually.")
+    
+    # Create rules embed
+    embed = discord.Embed(
+        title="📜 Rules & Guidelines",
+        description="Welcome to the DataBot community! Please read and follow these rules:",
+        color=0x00ff00
+    )
+    
+    # General Rules
+    embed.add_field(
+        name="✅ General Rules",
+        value=(
+            "• **Be Kind & Respectful.**\n"
+            "• Follow Discord's Terms of Service at all times.\n"
+            "• **Artificial growth or view botting is strictly forbidden.**\n"
+            "• We have systems in place to detect this.\n"
+            "• **Zero tolerance policy → permanent ban without warning.**"
+        ),
+        inline=False
+    )
+    
+    # Uploading Content
+    embed.add_field(
+        name="📹 Uploading Content",
+        value=(
+            "• You may share raw clips (unedited footage directly from streams/videos).\n"
+            "• You may share your own edits of clips.\n"
+            "• ❌ **Do NOT re-upload another editor's finished edit.**\n"
+            "• Example: Adding gameplay footage next to someone else's edit does not make it your own.\n"
+            "• You may look at other editors' styles for inspiration, but always make your own version."
+        ),
+        inline=False
+    )
+    
+    # Multiple Channels
+    embed.add_field(
+        name="🔗 Multiple Channels",
+        value=(
+            "• You can link as many YouTube channels as you want to your Discord account.\n"
+            "• Example: Two Shorts channels and one main channel can all be connected."
+        ),
+        inline=False
+    )
+    
+    # Upload Frequency
+    embed.add_field(
+        name="⏳ Upload Frequency",
+        value=(
+            "• Frequent uploading is encouraged!\n"
+            "• 🚫 Spam uploading is not allowed.\n"
+            "• **Upload limit: 350 videos per month.**\n"
+            "• Uploading beyond this limit may result in removal from the system."
+        ),
+        inline=False
+    )
+    
+    # Tracking Views
+    embed.add_field(
+        name="📊 Tracking Views",
+        value="Use the `!info` command to see how many views your videos have across your channels.",
+        inline=False
+    )
+    
+    # Content Restrictions
+    embed.add_field(
+        name="🚫 Content Restrictions",
+        value=(
+            "• Only upload clips where the content creator is actively part of the video.\n"
+            "• **Do not post:**\n"
+            "  - Clips made to defame someone.\n"
+            "  - Content taken out of context with intent to mislead.\n"
+            "  - Disturbing, pornographic, or otherwise TOS-breaking content.\n"
+            "• Keep everything safe and appropriate for YouTube."
+        ),
+        inline=False
+    )
+    
+    # Reusing & Editing Content
+    embed.add_field(
+        name="🔄 Reusing & Editing Content",
+        value=(
+            "• You can take raw clips and make your own edits.\n"
+            "• ❌ **Do not re-upload another creator's final edits** (with subtitles, cuts, effects, etc.).\n"
+            "• ❌ **Do not re-upload a creator's official shorts** without making significant, original changes.\n"
+            "• Small tweaks (like just adding gameplay footage) do not count."
+        ),
+        inline=False
+    )
+    
+    # Upload Timing
+    embed.add_field(
+        name="📅 Upload Timing",
+        value=(
+            "• You can only add videos that were posted within the same calendar month (e.g., Jan 1–31, then Feb 1 starts a new month).\n"
+            "• Views are counted in 2-month cycles, so posting right before a cycle ends is not recommended."
+        ),
+        inline=False
+    )
+    
+    embed.add_field(
+        name="🎉 Welcome!",
+        value=(
+            "**You now have the clipper role and can use all DataBot commands!**\n\n"
+            "Start by using `!verify <channel_url>` to add your YouTube channel."
+        ),
+        inline=False
+    )
+    
+    embed.set_footer(text="DataBot - Follow the rules and happy clipping!")
+    await ctx.send(embed=embed)
+
+
 @bot.command(name="verify")
 @error_handler
+@require_clipper_role()
 async def verify_command(ctx: commands.Context, url: str, mode: str = "manual"):
     """Verify your YouTube channel ownership for tracking"""
     
@@ -295,6 +465,7 @@ async def verify_command(ctx: commands.Context, url: str, mode: str = "manual"):
 
 @bot.command(name="done")
 @error_handler
+@require_clipper_role()
 async def done_command(ctx: commands.Context):
     """Complete verification after adding code to channel description"""
     
@@ -424,6 +595,7 @@ async def done_command(ctx: commands.Context):
 
 @bot.command(name="add")
 @error_handler
+@require_clipper_role()
 async def add_command(ctx: commands.Context, video_url: str):
     """Add a YouTube video to track views manually"""
     
@@ -558,6 +730,7 @@ async def add_command(ctx: commands.Context, video_url: str):
 
 @bot.command(name="sync")
 @error_handler
+@require_clipper_role()
 async def sync_command(ctx: commands.Context):
     """Sync videos from automatic channels"""
     
@@ -673,6 +846,7 @@ async def sync_command(ctx: commands.Context):
 
 @bot.command(name="stats")
 @error_handler
+@require_clipper_role()
 async def stats_command(ctx: commands.Context):
     """Show your current stats for tracked videos with automatic syncing"""
     
@@ -869,6 +1043,7 @@ async def stats_command(ctx: commands.Context):
 
 @bot.command(name="monthly")
 @error_handler
+@require_clipper_role()
 async def monthly_command(ctx: commands.Context):
     """Show monthly summary with automatic tracking info"""
     
@@ -973,6 +1148,7 @@ async def monthly_command(ctx: commands.Context):
 
 @bot.command(name="report")
 @error_handler
+@require_clipper_role()
 async def report_command(ctx: commands.Context, month: Optional[int] = None, year: Optional[int] = None):
     """Show monthly aggregated view report with real-time updates"""
     
@@ -1189,6 +1365,7 @@ async def report_command(ctx: commands.Context, month: Optional[int] = None, yea
 
 @bot.command(name="channels")
 @error_handler
+@require_clipper_role()
 async def channels_command(ctx: commands.Context):
     """List your verified channels"""
     
@@ -1234,6 +1411,7 @@ async def channels_command(ctx: commands.Context):
 
 @bot.command(name="videos")
 @error_handler
+@require_clipper_role()
 async def videos_command(ctx: commands.Context):
     """List all your tracked videos"""
     
@@ -1284,6 +1462,7 @@ async def videos_command(ctx: commands.Context):
 
 @bot.command(name="remove")
 @error_handler
+@require_clipper_role()
 async def remove_command(ctx: commands.Context, video_id: str):
     """Remove a video from tracking"""
     
