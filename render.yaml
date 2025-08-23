@@ -108,6 +108,7 @@ services:
     name: databot-redis
     plan: starter  # $7/month - 256MB RAM, shared CPU
     maxmemoryPolicy: allkeys-lru
+    ipAllowList: []  # Allow all IPs for internal service communication
 
 databases:
   # =============================================================================
