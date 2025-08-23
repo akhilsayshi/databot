@@ -117,7 +117,7 @@ databases:
   - name: databot-db
     databaseName: databot
     user: databot
-    plan: starter  # $7/month - 1GB storage, shared CPU
+    plan: free  # Free tier - 1GB storage, shared CPU
 
 # =============================================================================
 # SECRETS (Configure these in Render Dashboard)
@@ -162,10 +162,10 @@ databases:
 # - Web Service (Bot): $7
 # - Celery Worker: $7  
 # - Celery Scheduler: $7
-# - PostgreSQL Database: $7
+# - PostgreSQL Database: Free
 # - Redis Cache: $7
 # 
-# Total: ~$35/month for full production deployment
+# Total: ~$28/month for full production deployment
 #
 # =============================================================================
 # SCALING OPTIONS
