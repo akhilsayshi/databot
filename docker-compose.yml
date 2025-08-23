@@ -1,0 +1,140 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: databot-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: databot
+      POSTGRES_USER: databot
+      POSTGRES_PASSWORD: databot_pass
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d
+    networks:
+      - databot-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U databot -d databot"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: databot-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+      - ./docker/redis/redis.conf:/usr/local/etc/redis/redis.conf
+    networks:
+      - databot-network
+    command: redis-server /usr/local/etc/redis/redis.conf --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Celery Worker for Background Tasks
+  celery-worker:
+    build: .
+    container_name: databot-celery
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://databot:databot_pass@postgres:5432/databot
+      - REDIS_URL=redis://redis:6379/0
+      - YOUTUBE_API_KEY=${YOUTUBE_API_KEY}
+      - ENVIRONMENT=production
+      - LOG_LEVEL=INFO
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - databot-network
+    volumes:
+      - ./logs:/app/logs
+    command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=2 --max-tasks-per-child=1000
+    healthcheck:
+      test: ["CMD", "celery", "-A", "app.tasks.celery_app", "inspect", "ping"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Main Bot Application
+  bot:
+    build: .
+    container_name: databot-bot
+    restart: unless-stopped
+    environment:
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+      - DISCORD_GUILD_ID=${DISCORD_GUILD_ID}
+      - DATABASE_URL=postgresql+psycopg2://databot:databot_pass@postgres:5432/databot
+      - REDIS_URL=redis://redis:6379/0
+      - YOUTUBE_API_KEY=${YOUTUBE_API_KEY}
+      - ENVIRONMENT=production
+      - LOG_LEVEL=INFO
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - databot-network
+    volumes:
+      - ./logs:/app/logs
+    command: python start.py
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; from app.infrastructure.db import check_database_health; from app.infrastructure.cache import check_redis_health; sys.exit(0 if check_database_health() and check_redis_health() else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # API Server (Optional - for future web interface)
+  # api:
+  #   build: .
+  #   container_name: databot-api
+  #   restart: unless-stopped
+  #   environment:
+  #     - DATABASE_URL=postgresql+psycopg2://databot:databot_pass@postgres:5432/databot
+  #     - REDIS_URL=redis://redis:6379/0
+  #     - YOUTUBE_API_KEY=${YOUTUBE_API_KEY}
+  #     - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-secret-key-change-in-production}
+  #     - ENVIRONMENT=production
+  #     - API_HOST=0.0.0.0
+  #     - API_PORT=8000
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   networks:
+  #     - databot-network
+  #   volumes:
+  #     - ./logs:/app/logs
+  #   ports:
+  #     - "8000:8000"
+  #   command: python api_server.py
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  databot-network:
+    driver: bridge
+
+

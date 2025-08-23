@@ -1,0 +1,378 @@
+name: DataBot CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+    
+  # Allow manual workflow dispatch
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # =============================================================================
+  # TESTING PHASE
+  # =============================================================================
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: databot_test
+          POSTGRES_USER: databot
+          POSTGRES_PASSWORD: databot_pass
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+          
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-cov black flake8 mypy
+        
+    - name: Create test environment file
+      run: |
+        cat > .env << EOF
+        DISCORD_BOT_TOKEN=test_token_for_ci
+        YOUTUBE_API_KEY=test_api_key_for_ci
+        DATABASE_URL=postgresql+psycopg2://databot:databot_pass@localhost:5432/databot_test
+        REDIS_URL=redis://localhost:6379/0
+        ENVIRONMENT=testing
+        LOG_LEVEL=DEBUG
+        EOF
+        
+    - name: Code formatting check
+      run: |
+        black --check app/ tests/
+        
+    - name: Lint code
+      run: |
+        flake8 app/ tests/ --max-line-length=100 --ignore=E203,W503
+        
+    - name: Type checking
+      run: |
+        mypy app/ --ignore-missing-imports
+        
+    - name: Run tests with coverage
+      run: |
+        pytest tests/ -v --cov=app --cov-report=xml --cov-report=html
+        
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        
+    - name: Archive test results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: test-results
+        path: |
+          htmlcov/
+          coverage.xml
+
+  # =============================================================================
+  # SECURITY SCANNING
+  # =============================================================================
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        
+    - name: Upload Trivy scan results
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  # =============================================================================
+  # BUILD PHASE
+  # =============================================================================
+  build:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    needs: [test, security]
+    permissions:
+      contents: read
+      packages: write
+      
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
+      
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+          
+    - name: Build and push Docker image
+      id: build
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        platforms: linux/amd64,linux/arm64
+
+  # =============================================================================
+  # STAGING DEPLOYMENT
+  # =============================================================================
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/develop' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+    environment:
+      name: staging
+      url: https://staging.databot.example.com
+      
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup SSH
+      uses: webfactory/ssh-agent@v0.8.0
+      with:
+        ssh-private-key: ${{ secrets.STAGING_SSH_KEY }}
+        
+    - name: Deploy to staging server
+      run: |
+        ssh -o StrictHostKeyChecking=no ${{ secrets.STAGING_USER }}@${{ secrets.STAGING_HOST }} << 'EOF'
+          cd /opt/databot
+          
+          # Pull latest image
+          docker pull ${{ needs.build.outputs.image-tag }}
+          
+          # Update docker-compose with new image
+          export IMAGE_TAG=${{ needs.build.outputs.image-tag }}
+          
+          # Deploy with zero downtime
+          docker-compose -f docker-compose.staging.yml up -d --no-deps --build bot celery-worker
+          
+          # Wait for health checks
+          sleep 30
+          
+          # Verify deployment
+          docker-compose -f docker-compose.staging.yml ps
+        EOF
+        
+    - name: Run staging health checks
+      run: |
+        # Wait for services to be ready
+        sleep 60
+        
+        # Check if bot is responding
+        ssh -o StrictHostKeyChecking=no ${{ secrets.STAGING_USER }}@${{ secrets.STAGING_HOST }} << 'EOF'
+          cd /opt/databot
+          
+          # Check container health
+          if ! docker-compose -f docker-compose.staging.yml ps | grep -q "Up (healthy)"; then
+            echo "❌ Health check failed"
+            docker-compose -f docker-compose.staging.yml logs
+            exit 1
+          fi
+          
+          echo "✅ Staging deployment successful"
+        EOF
+
+  # =============================================================================
+  # PRODUCTION DEPLOYMENT
+  # =============================================================================
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    environment:
+      name: production
+      url: https://databot.example.com
+      
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup SSH
+      uses: webfactory/ssh-agent@v0.8.0
+      with:
+        ssh-private-key: ${{ secrets.PRODUCTION_SSH_KEY }}
+        
+    - name: Create deployment backup
+      run: |
+        ssh -o StrictHostKeyChecking=no ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST }} << 'EOF'
+          cd /opt/databot
+          
+          # Create backup of current deployment
+          timestamp=$(date +%Y%m%d_%H%M%S)
+          sudo -u postgres pg_dump databot > "backups/databot_backup_${timestamp}.sql"
+          
+          # Tag current image as rollback
+          docker tag $(docker-compose ps -q bot) databot:rollback-${timestamp}
+          
+          echo "✅ Backup created: ${timestamp}"
+        EOF
+        
+    - name: Deploy to production server
+      run: |
+        ssh -o StrictHostKeyChecking=no ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST }} << 'EOF'
+          cd /opt/databot
+          
+          # Pull latest image
+          docker pull ${{ needs.build.outputs.image-tag }}
+          
+          # Update docker-compose with new image
+          export IMAGE_TAG=${{ needs.build.outputs.image-tag }}
+          
+          # Rolling deployment with health checks
+          docker-compose -f docker-compose.production.yml up -d --no-deps --scale bot=2 bot
+          sleep 30
+          
+          # Check new instance health
+          if docker-compose -f docker-compose.production.yml ps | grep -q "Up (healthy)"; then
+            # Scale down old instance
+            docker-compose -f docker-compose.production.yml up -d --no-deps --scale bot=1 bot
+            
+            # Update other services
+            docker-compose -f docker-compose.production.yml up -d --no-deps celery-worker
+          else
+            echo "❌ New instance unhealthy, rolling back"
+            docker-compose -f docker-compose.production.yml up -d --no-deps --scale bot=1 bot
+            exit 1
+          fi
+        EOF
+        
+    - name: Run production health checks
+      run: |
+        # Wait for services to be ready
+        sleep 60
+        
+        ssh -o StrictHostKeyChecking=no ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST }} << 'EOF'
+          cd /opt/databot
+          
+          # Comprehensive health check
+          if ! docker-compose -f docker-compose.production.yml ps | grep -q "Up (healthy)"; then
+            echo "❌ Production health check failed"
+            docker-compose -f docker-compose.production.yml logs
+            exit 1
+          fi
+          
+          # Test bot functionality
+          if ! docker-compose -f docker-compose.production.yml exec -T bot python -c "from app.infrastructure.db import check_database_health; assert check_database_health()"; then
+            echo "❌ Database connectivity failed"
+            exit 1
+          fi
+          
+          echo "✅ Production deployment successful"
+        EOF
+        
+    - name: Notify deployment success
+      if: success()
+      uses: 8398a7/action-slack@v3
+      with:
+        status: success
+        channel: '#deployments'
+        text: '🚀 DataBot deployed to production successfully!'
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        
+    - name: Notify deployment failure
+      if: failure()
+      uses: 8398a7/action-slack@v3
+      with:
+        status: failure
+        channel: '#deployments'
+        text: '❌ DataBot production deployment failed!'
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # =============================================================================
+  # CLEANUP
+  # =============================================================================
+  cleanup:
+    name: Cleanup Old Images
+    runs-on: ubuntu-latest
+    needs: [deploy-staging, deploy-production]
+    if: always()
+    
+    steps:
+    - name: Delete old container images
+      uses: actions/delete-package-versions@v4
+      with:
+        package-name: ${{ github.event.repository.name }}
+        package-type: container
+        min-versions-to-keep: 10
+        delete-only-untagged-versions: false

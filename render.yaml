@@ -1,0 +1,164 @@
+# DataBot Render Deployment Configuration
+# This file defines the services for deploying DataBot on Render
+
+services:
+  # =============================================================================
+  # MAIN BOT APPLICATION
+  # =============================================================================
+  - type: web
+    name: databot-bot
+    env: python
+    plan: starter  # $7/month - 512MB RAM, 0.1 CPU
+    buildCommand: |
+      pip install -r requirements.txt
+      python -c "from app.infrastructure.db import init_db; init_db()"
+    startCommand: python start.py
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      - key: COMMAND_PREFIX
+        value: "!"
+      - key: MAX_VIDEOS_PER_USER
+        value: "100"
+      - key: RATE_LIMIT_REQUESTS
+        value: "10"
+      - key: RATE_LIMIT_WINDOW
+        value: "60"
+      - key: CACHE_TTL
+        value: "3600"
+      - key: DEFAULT_TIMEZONE
+        value: "UTC"
+    secretFiles:
+      - key: DISCORD_BOT_TOKEN
+        name: discord-bot-token
+      - key: YOUTUBE_API_KEY
+        name: youtube-api-key
+      - key: DATABASE_URL
+        name: database-url
+      - key: REDIS_URL
+        name: redis-url
+    healthCheckPath: /health
+    autoDeploy: true
+    branch: main
+
+  # =============================================================================
+  # CELERY WORKER FOR BACKGROUND TASKS
+  # =============================================================================
+  - type: worker
+    name: databot-celery
+    env: python
+    plan: starter  # $7/month - 512MB RAM, 0.1 CPU
+    buildCommand: pip install -r requirements.txt
+    startCommand: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=1
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+    secretFiles:
+      - key: YOUTUBE_API_KEY
+        name: youtube-api-key
+      - key: DATABASE_URL
+        name: database-url
+      - key: REDIS_URL
+        name: redis-url
+    autoDeploy: true
+    branch: main
+
+  # =============================================================================
+  # CELERY BEAT SCHEDULER
+  # =============================================================================
+  - type: worker
+    name: databot-scheduler
+    env: python
+    plan: starter  # $7/month - 512MB RAM, 0.1 CPU
+    buildCommand: pip install -r requirements.txt
+    startCommand: celery -A app.tasks.celery_app beat --loglevel=info
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+    secretFiles:
+      - key: DATABASE_URL
+        name: database-url
+      - key: REDIS_URL
+        name: redis-url
+    autoDeploy: true
+    branch: main
+
+databases:
+  # =============================================================================
+  # POSTGRESQL DATABASE
+  # =============================================================================
+  - name: databot-db
+    databaseName: databot
+    user: databot
+    plan: starter  # $7/month - 1GB storage, shared CPU
+
+redis:
+  # =============================================================================
+  # REDIS CACHE
+  # =============================================================================
+  - name: databot-redis
+    plan: starter  # $7/month - 256MB RAM, shared CPU
+    maxmemoryPolicy: allkeys-lru
+
+# =============================================================================
+# SECRETS (Configure these in Render Dashboard)
+# =============================================================================
+# The following secrets need to be configured in the Render dashboard:
+# 
+# 1. discord-bot-token: Your Discord bot token
+#    - Go to Discord Developer Portal → Your Application → Bot → Token
+# 
+# 2. youtube-api-key: Your YouTube Data API v3 key
+#    - Go to Google Cloud Console → APIs & Services → Credentials
+# 
+# 3. database-url: PostgreSQL connection string (auto-generated)
+#    - Format: postgresql://user:password@host:port/database
+#    - This will be automatically created when you provision the database
+# 
+# 4. redis-url: Redis connection string (auto-generated)
+#    - Format: redis://host:port/database
+#    - This will be automatically created when you provision Redis
+#
+# =============================================================================
+# DEPLOYMENT INSTRUCTIONS
+# =============================================================================
+# 
+# 1. Push this code to GitHub
+# 2. Connect your GitHub repository to Render
+# 3. Create a new "Blueprint" deployment
+# 4. Render will automatically:
+#    - Provision PostgreSQL database
+#    - Provision Redis cache
+#    - Deploy the web service (bot)
+#    - Deploy Celery worker
+#    - Deploy Celery beat scheduler
+# 5. Configure secrets in Render dashboard
+# 6. Your bot will be available at: https://databot-bot.onrender.com
+#
+# =============================================================================
+# COST ESTIMATE
+# =============================================================================
+# 
+# Monthly costs (Render):
+# - Web Service (Bot): $7
+# - Celery Worker: $7  
+# - Celery Scheduler: $7
+# - PostgreSQL Database: $7
+# - Redis Cache: $7
+# 
+# Total: ~$35/month for full production deployment
+#
+# =============================================================================
+# SCALING OPTIONS
+# =============================================================================
+# 
+# For higher traffic, consider upgrading to:
+# - Standard plans ($25/month each) for more CPU/RAM
+# - Pro plans ($100/month each) for dedicated resources
+# - Scale multiple Celery workers for better performance

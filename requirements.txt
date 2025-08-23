@@ -1,0 +1,15 @@
+# Core dependencies
+discord.py==2.3.2
+SQLAlchemy==2.0.43
+psycopg2-binary==2.9.10
+alembic==1.16.4
+celery==5.5.3
+redis==5.0.6
+requests==2.32.3
+python-dotenv==1.0.1
+aiohttp==3.9.1
+flask==3.0.0
+
+# YouTube API
+google-api-python-client==2.108.0
+

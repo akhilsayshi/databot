@@ -1,0 +1,110 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: databot-postgres-staging
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: databot_staging
+      POSTGRES_USER: databot
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    volumes:
+      - postgres_staging_data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d
+    networks:
+      - databot-staging-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U databot -d databot_staging"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: databot-redis-staging
+    restart: unless-stopped
+    volumes:
+      - redis_staging_data:/data
+      - ./docker/redis/redis.conf:/usr/local/etc/redis/redis.conf
+    networks:
+      - databot-staging-network
+    command: redis-server /usr/local/etc/redis/redis.conf --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Celery Worker for Background Tasks
+  celery-worker:
+    image: ${IMAGE_TAG:-ghcr.io/yourusername/databot:latest}
+    container_name: databot-celery-staging
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://databot:${POSTGRES_PASSWORD}@postgres:5432/databot_staging
+      - REDIS_URL=redis://redis:6379/0
+      - YOUTUBE_API_KEY=${YOUTUBE_API_KEY}
+      - ENVIRONMENT=staging
+      - LOG_LEVEL=INFO
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - databot-staging-network
+    volumes:
+      - ./logs:/app/logs
+    command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=1 --max-tasks-per-child=1000
+    healthcheck:
+      test: ["CMD", "celery", "-A", "app.tasks.celery_app", "inspect", "ping"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Main Bot Application
+  bot:
+    image: ${IMAGE_TAG:-ghcr.io/yourusername/databot:latest}
+    container_name: databot-bot-staging
+    restart: unless-stopped
+    environment:
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+      - DISCORD_GUILD_ID=${DISCORD_GUILD_ID}
+      - DATABASE_URL=postgresql+psycopg2://databot:${POSTGRES_PASSWORD}@postgres:5432/databot_staging
+      - REDIS_URL=redis://redis:6379/0
+      - YOUTUBE_API_KEY=${YOUTUBE_API_KEY}
+      - ENVIRONMENT=staging
+      - LOG_LEVEL=INFO
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - databot-staging-network
+    volumes:
+      - ./logs:/app/logs
+    command: python start.py
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; from app.infrastructure.db import check_database_health; from app.infrastructure.cache import check_redis_health; sys.exit(0 if check_database_health() and check_redis_health() else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  postgres_staging_data:
+    driver: local
+  redis_staging_data:
+    driver: local
+
+networks:
+  databot-staging-network:
+    driver: bridge
