@@ -30,15 +30,19 @@ services:
         value: "3600"
       - key: DEFAULT_TIMEZONE
         value: "UTC"
-    secretFiles:
       - key: DISCORD_BOT_TOKEN
-        name: discord-bot-token
+        sync: false
       - key: YOUTUBE_API_KEY
-        name: youtube-api-key
+        sync: false
       - key: DATABASE_URL
-        name: database-url
+        fromDatabase:
+          name: databot-db
+          property: connectionString
       - key: REDIS_URL
-        name: redis-url
+        fromService:
+          type: redis
+          name: databot-redis
+          property: connectionString
     healthCheckPath: /health
     autoDeploy: true
     branch: main
@@ -57,13 +61,17 @@ services:
         value: production
       - key: LOG_LEVEL
         value: INFO
-    secretFiles:
       - key: YOUTUBE_API_KEY
-        name: youtube-api-key
+        sync: false
       - key: DATABASE_URL
-        name: database-url
+        fromDatabase:
+          name: databot-db
+          property: connectionString
       - key: REDIS_URL
-        name: redis-url
+        fromService:
+          type: redis
+          name: databot-redis
+          property: connectionString
     autoDeploy: true
     branch: main
 
@@ -81,13 +89,25 @@ services:
         value: production
       - key: LOG_LEVEL
         value: INFO
-    secretFiles:
       - key: DATABASE_URL
-        name: database-url
+        fromDatabase:
+          name: databot-db
+          property: connectionString
       - key: REDIS_URL
-        name: redis-url
+        fromService:
+          type: redis
+          name: databot-redis
+          property: connectionString
     autoDeploy: true
     branch: main
+
+  # =============================================================================
+  # REDIS CACHE
+  # =============================================================================
+  - type: redis
+    name: databot-redis
+    plan: starter  # $7/month - 256MB RAM, shared CPU
+    maxmemoryPolicy: allkeys-lru
 
 databases:
   # =============================================================================
@@ -98,30 +118,22 @@ databases:
     user: databot
     plan: starter  # $7/month - 1GB storage, shared CPU
 
-redis:
-  # =============================================================================
-  # REDIS CACHE
-  # =============================================================================
-  - name: databot-redis
-    plan: starter  # $7/month - 256MB RAM, shared CPU
-    maxmemoryPolicy: allkeys-lru
-
 # =============================================================================
 # SECRETS (Configure these in Render Dashboard)
 # =============================================================================
 # The following secrets need to be configured in the Render dashboard:
 # 
-# 1. discord-bot-token: Your Discord bot token
+# 1. DISCORD_BOT_TOKEN: Your Discord bot token
 #    - Go to Discord Developer Portal → Your Application → Bot → Token
 # 
-# 2. youtube-api-key: Your YouTube Data API v3 key
+# 2. YOUTUBE_API_KEY: Your YouTube Data API v3 key
 #    - Go to Google Cloud Console → APIs & Services → Credentials
 # 
-# 3. database-url: PostgreSQL connection string (auto-generated)
+# 3. DATABASE_URL: PostgreSQL connection string (auto-generated)
 #    - Format: postgresql://user:password@host:port/database
 #    - This will be automatically created when you provision the database
 # 
-# 4. redis-url: Redis connection string (auto-generated)
+# 4. REDIS_URL: Redis connection string (auto-generated)
 #    - Format: redis://host:port/database
 #    - This will be automatically created when you provision Redis
 #
