@@ -5,7 +5,7 @@ services:
   # =============================================================================
   # MAIN BOT APPLICATION
   # =============================================================================
-  - type: web
+  - type: worker
     name: databot-bot
     env: python
     plan: starter  # $7/month - 512MB RAM, 0.1 CPU
@@ -41,7 +41,6 @@ services:
           type: redis
           name: databot-redis
           property: connectionString
-    healthCheckPath: /health
     autoDeploy: true
     branch: main
 
@@ -157,7 +156,7 @@ databases:
 # =============================================================================
 # 
 # Monthly costs (Render):
-# - Web Service (Bot): $7
+# - Background Worker (Bot): $7
 # - Celery Worker: $7  
 # - Celery Scheduler: $7
 # - PostgreSQL Database: Free
