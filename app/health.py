@@ -71,8 +71,12 @@ def root():
         "version": "1.0.0"
     }), 200
 
-def start_health_server(host='0.0.0.0', port=8080):
+def start_health_server(host='0.0.0.0', port=None):
     """Start the health check server in a separate thread"""
+    # Use PORT environment variable for Render, fallback to 8080
+    if port is None:
+        port = int(os.getenv('PORT', 8080))
+    
     def run_server():
         try:
             logger.info(f"Starting health check server on {host}:{port}")

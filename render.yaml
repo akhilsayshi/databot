@@ -9,9 +9,7 @@ services:
     name: databot-bot
     env: python
     plan: starter  # $7/month - 512MB RAM, 0.1 CPU
-    buildCommand: |
-      pip install -r requirements.txt
-      python -c "from app.infrastructure.db import init_db; init_db()"
+    buildCommand: pip install -r requirements.txt
     startCommand: python start.py
     envVars:
       - key: ENVIRONMENT
