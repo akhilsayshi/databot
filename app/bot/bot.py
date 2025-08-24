@@ -221,18 +221,19 @@ async def register_command(ctx: commands.Context):
     
     # Create TOS embed
     embed = discord.Embed(
-        title="📜 Terms of Service",
+        title="📜 Filian Clipping Community - Terms of Service",
         description=(
-            "**Welcome to DataBot!** 🎉\n\n"
+            "**Welcome to the Filian Clipping Community!** 🎉\n\n"
             "Before you can use DataBot commands, you must accept our Terms of Service.\n\n"
             "**By accepting, you agree to:**\n"
-            "• Follow Discord's Terms of Service\n"
-            "• Be kind and respectful to other users\n"
-            "• Not use artificial growth or view botting\n"
-            "• Only upload appropriate content\n"
-            "• Respect content creators' rights\n"
-            "• Follow upload frequency guidelines\n\n"
-            "**Click the button below to accept the Terms of Service and receive the clipper role.**"
+            "• Be Kind & Respectful, Obey Discord's TOS\n"
+            "• **ZERO TOLERANCE** for view botting/artificial growth (permaban)\n"
+            "• Only upload appropriate Filian content\n"
+            "• No stealing other clippers' edits\n"
+            "• Follow 350 videos/month limit\n"
+            "• Only track monthly views (not total views)\n"
+            "• Views count in 2-month cycles\n\n"
+            "**Click the button below to accept and become a clipper!**"
         ),
         color=0x0099ff
     )
@@ -607,21 +608,21 @@ async def add_command(ctx: commands.Context, video_url: str):
         session.add(video)
         session.flush()
         
-        # Create initial monthly view record
+        # Create initial monthly view record (start at 0 - only track incremental views from this point)
         now = datetime.now(timezone.utc)
         monthly_view = MonthlyView(
             user_id=user.id,
             video_id=video.id,
             year=now.year,
             month=now.month,
-            views=stats.view_count,
+            views=0,  # Start at 0 - only track views gained after adding to bot
             updated_at=now
         )
         session.add(monthly_view)
         
         embed = discord.Embed(
-            title="✅ Added!",
-            description=f"**{stats.title or 'Unknown'}**\nViews: {format_number(stats.view_count)} | Likes: {format_number(stats.like_count)}",
+            title="✅ Video Added to Monthly Tracking!",
+            description=f"**{stats.title or 'Unknown'}**\n\n🔄 **Now tracking monthly views only**\nCurrent total views: {format_number(stats.view_count)} (not tracked)\nMonthly tracking starts: NOW",
             color=0x00ff00
         )
         
@@ -830,19 +831,18 @@ async def stats_command(ctx: commands.Context):
                     ).scalar_one_or_none()
                     
                     if monthly_view:
-                        # Update existing monthly record
-                        monthly_view.views = current_stats.view_count
-                        monthly_view.views_change = view_change
+                        # Update existing monthly record with ONLY incremental views
+                        if view_change > 0:
+                            monthly_view.views += view_change  # Add only new views to monthly total
                         monthly_view.updated_at = now
                     else:
-                        # Create new monthly record
+                        # Create new monthly record starting from 0
                         monthly_view = MonthlyView(
                             user_id=user.id,
                             video_id=video.id,
                             year=now.year,
                             month=now.month,
-                            views=current_stats.view_count,
-                            views_change=view_change,
+                            views=max(0, view_change),  # Only track new views gained this month
                             updated_at=now
                         )
                         session.add(monthly_view)
@@ -1441,47 +1441,45 @@ class TOSView(discord.ui.View):
         try:
             await interaction.user.add_roles(clipper_role)
             
-            embed = discord.Embed(
-                title="✅ Terms of Service Accepted",
-                description=(
-                    "**Welcome to DataBot!** 🎉\n\n"
-                    "You have successfully accepted the Terms of Service and received the **clipper** role.\n\n"
-                    "**You can now use all DataBot commands:**\n"
-                    "• `!verify <channel_url>` - Add your YouTube channel\n"
-                    "• `!add <video_url>` - Track a video\n"
-                    "• `!videos` - View your tracked videos\n"
-                    "• `!stats` - View your video statistics\n"
-                    "• `!help` - See all available commands\n\n"
-                    "**Happy clipping!** ✂️"
-                ),
-                color=0x00ff00
-            )
-            
-            # Add full rules after acceptance
-            embed.add_field(
-                name="📜 Rules & Guidelines",
-                value=(
-                    "**Please read and follow these rules:**\n\n"
-                    "**✅ General Rules:**\n"
-                    "• Be Kind & Respectful\n"
-                    "• Follow Discord's Terms of Service\n"
-                    "• Artificial growth or view botting is strictly forbidden\n"
-                    "• Zero tolerance policy → permanent ban\n\n"
-                    "**📹 Uploading Content:**\n"
-                    "• Share raw clips and your own edits\n"
-                    "• ❌ Do NOT re-upload another editor's finished edit\n"
-                    "• Make your own version, don't copy\n\n"
-                    "**🚫 Content Restrictions:**\n"
-                    "• Only appropriate content\n"
-                    "• No defamatory or misleading content\n"
-                    "• Keep everything safe for YouTube\n\n"
-                    "**⏳ Upload Limits:**\n"
-                    "• 350 videos per month maximum\n"
-                    "• No spam uploading\n"
-                    "• Respect upload timing guidelines"
-                ),
-                inline=False
-            )
+                         embed = discord.Embed(
+                 title="✅ Terms of Service Accepted",
+                 description=(
+                     "**Welcome to the Filian Clipping Community!** 🎉\n\n"
+                     "You have successfully accepted the Terms of Service and received the **clipper** role.\n\n"
+                     "**You can now use all DataBot commands:**\n"
+                     "• `!verify <channel_url>` - Add your YouTube/TikTok/Instagram channel\n"
+                     "• `!add <video_url>` - Track a video (monthly views only)\n"
+                     "• `!videos` - View your tracked videos\n"
+                     "• `!stats` - View monthly view statistics\n"
+                     "• `!help` - See all available commands\n\n"
+                     "**Happy clipping!** ✂️"
+                 ),
+                 color=0x00ff00
+             )
+             
+             # Add Filian-specific rules after acceptance
+             embed.add_field(
+                 name="📜 Filian Clipping Rules & Guidelines",
+                 value=(
+                     "**🎯 Core Rules:**\n"
+                     "• Be Kind & Respectful, Obey Discord's TOS\n"
+                     "• **ZERO TOLERANCE** for view botting/artificial growth → permaban\n"
+                     "• You keep ALL money your channels earn + get paid for views!\n\n"
+                     "**📹 Content Guidelines:**\n"
+                     "• ✅ Use raw unedited clips from Filian's stream\n"
+                     "• ✅ Make your own edits and versions\n"
+                     "• ❌ NO downloading/uploading other clippers' edits\n"
+                     "• ❌ NO adding gameplay over others' edits\n"
+                     "• ❌ NO re-uploading Filian's official shorts\n\n"
+                     "**🚀 Upload Rules:**\n"
+                     "• Post on ALL platforms (TT, IG, YT) - all views count!\n"
+                     "• Link unlimited channels to your Discord\n"
+                     "• 350 videos per month maximum\n"
+                     "• Only add videos posted in SAME MONTH\n"
+                     "• Views count in 2-month cycles"
+                 ),
+                 inline=False
+             )
             
             await interaction.response.send_message(embed=embed, ephemeral=False)
             
