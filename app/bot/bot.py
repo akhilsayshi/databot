@@ -241,6 +241,7 @@ async def help_command(ctx: commands.Context):
             "`!stats` - Show live stats & auto-sync videos\n"
             "`!report [month] [year]` - Generate live monthly report\n"
             "`!monthly` - Show monthly summary\n"
+            "`!fix_monthly` - Fix monthly view tracking (reset to incremental)\n"
             "`!channels` - List your channels\n"
             "`!videos` - List tracked videos"
         ),
@@ -787,14 +788,14 @@ async def sync_command(ctx: commands.Context):
                     session.add(video)
                     session.flush()
                     
-                    # Create initial monthly view record
+                    # Create initial monthly view record (start at 0 - only track incremental views from this point)
                     now = datetime.now(timezone.utc)
                     monthly_view = MonthlyView(
                         user_id=user.id,
                         video_id=video.id,
                         year=now.year,
                         month=now.month,
-                        views=stats.view_count,
+                        views=0,  # Start at 0 - only track views gained after adding to bot
                         updated_at=now
                     )
                     session.add(monthly_view)
@@ -1048,6 +1049,66 @@ async def stats_command(ctx: commands.Context):
         await processing_msg.edit(embed=embed)
 
 
+@bot.command(name="fix_monthly")
+@error_handler
+@require_clipper_role()
+async def fix_monthly_command(ctx: commands.Context):
+    """Fix monthly view counts by resetting them to track only incremental views from now on"""
+    
+    processing_embed = discord.Embed(
+        title="🔧 Fixing Monthly View Tracking",
+        description="Resetting monthly views to track only incremental views...",
+        color=0xffff00
+    )
+    processing_msg = await ctx.send(embed=processing_embed)
+    
+    with session_scope() as session:
+        user = session.execute(
+            select(User).where(User.discord_user_id == str(ctx.author.id))
+        ).scalar_one_or_none()
+        
+        if user is None:
+            raise ValueError("No videos tracked yet. Use `!add` to add your first video")
+        
+        # Get current month's monthly view records
+        now = datetime.now(timezone.utc)
+        monthly_views = session.execute(
+            select(MonthlyView).where(
+                and_(
+                    MonthlyView.user_id == user.id,
+                    MonthlyView.year == now.year,
+                    MonthlyView.month == now.month
+                )
+            )
+        ).scalars().all()
+        
+        reset_count = 0
+        for monthly_view in monthly_views:
+            monthly_view.views = 0  # Reset to 0 to start tracking incremental views from now
+            monthly_view.updated_at = now
+            reset_count += 1
+        
+        session.commit()
+        
+        embed = discord.Embed(
+            title="✅ Monthly View Tracking Fixed",
+            description=f"Reset {reset_count} monthly view records to start tracking incremental views only.",
+            color=0x00ff00
+        )
+        
+        embed.add_field(
+            name="📊 What Was Fixed",
+            value=(
+                "• Monthly views reset to 0 for current month\n"
+                "• Will now track ONLY new views gained this month\n"
+                "• Use `!stats` to see corrected monthly tracking"
+            ),
+            inline=False
+        )
+        
+        await processing_msg.edit(embed=embed)
+
+
 @bot.command(name="monthly")
 @error_handler
 @require_clipper_role()
@@ -1234,18 +1295,19 @@ async def report_command(ctx: commands.Context, month: Optional[int] = None, yea
                     ).scalar_one_or_none()
                     
                     if monthly_view:
-                        # Update existing monthly record
-                        monthly_view.views = current_stats.view_count
+                        # Update existing monthly record with ONLY incremental views
+                        if view_change > 0:
+                            monthly_view.views += view_change  # Add only new views to monthly total
                         monthly_view.views_change = view_change
                         monthly_view.updated_at = now
                     else:
-                        # Create new monthly record
+                        # Create new monthly record starting from 0
                         monthly_view = MonthlyView(
                             user_id=user.id,
                             video_id=video.id,
                             year=year,
                             month=month,
-                            views=current_stats.view_count,
+                            views=max(0, view_change),  # Only track new views gained this month
                             views_change=view_change,
                             updated_at=now
                         )
@@ -1699,52 +1761,68 @@ async def reset_monthly_command(ctx: commands.Context):
         reset_count = 0
         error_count = 0
         
-        for video in videos:
+        # Process videos in smaller batches to avoid transaction issues
+        batch_size = 10
+        for i in range(0, len(videos), batch_size):
+            batch_videos = videos[i:i + batch_size]
+            
             try:
-                # Get current YouTube stats for baseline
-                current_stats = fetch_video_stats(video.video_id)
-                if not current_stats:
-                    error_count += 1
-                    continue
+                for video in batch_videos:
+                    try:
+                        # Get current YouTube stats for baseline
+                        current_stats = fetch_video_stats(video.video_id)
+                        if not current_stats:
+                            error_count += 1
+                            continue
+                        
+                        # Update video's last_view_count to current total
+                        video.last_view_count = current_stats.view_count
+                        video.last_updated_at = now
+                        
+                        # Reset or create monthly view record for current month
+                        existing_monthly = session.execute(
+                            select(MonthlyView).where(
+                                and_(
+                                    MonthlyView.video_id == video.id,
+                                    MonthlyView.year == now.year,
+                                    MonthlyView.month == now.month
+                                )
+                            )
+                        ).scalar_one_or_none()
+                        
+                        if existing_monthly:
+                            # Update existing record to reset views to 0
+                            existing_monthly.views = 0
+                            existing_monthly.views_change = 0
+                            existing_monthly.updated_at = now
+                        else:
+                            # Create fresh monthly view record starting at 0
+                            fresh_monthly = MonthlyView(
+                                user_id=video.user_id,
+                                video_id=video.id,
+                                year=now.year,
+                                month=now.month,
+                                views=0,  # Start at 0 - only track future incremental views
+                                views_change=0,
+                                updated_at=now
+                            )
+                            session.add(fresh_monthly)
+                        
+                        reset_count += 1
+                        
+                    except Exception as e:
+                        error_count += 1
+                        bot_logger.error(f"Error resetting video {video.video_id}: {e}")
+                        continue
                 
-                # Update video's last_view_count to current total
-                video.last_view_count = current_stats.view_count
-                video.last_updated_at = now
-                
-                # Delete existing monthly view record for current month
-                existing_monthly = session.execute(
-                    select(MonthlyView).where(
-                        and_(
-                            MonthlyView.video_id == video.id,
-                            MonthlyView.year == now.year,
-                            MonthlyView.month == now.month
-                        )
-                    )
-                ).scalar_one_or_none()
-                
-                if existing_monthly:
-                    session.delete(existing_monthly)
-                
-                # Create fresh monthly view record starting at 0
-                fresh_monthly = MonthlyView(
-                    user_id=video.user_id,
-                    video_id=video.id,
-                    year=now.year,
-                    month=now.month,
-                    views=0,  # Start at 0 - only track future incremental views
-                    updated_at=now
-                )
-                session.add(fresh_monthly)
-                
-                reset_count += 1
+                # Commit this batch
+                session.commit()
                 
             except Exception as e:
-                error_count += 1
-                bot_logger.error(f"Error resetting video {video.video_id}: {e}")
+                error_count += len(batch_videos)
+                bot_logger.error(f"Error committing batch: {e}")
+                session.rollback()
                 continue
-        
-        # Commit all changes
-        session.commit()
         
         # Update the message with results
         embed = discord.Embed(

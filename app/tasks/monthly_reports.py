@@ -283,14 +283,14 @@ def sync_new_videos_for_user(user_id: int):
                     session.add(video)
                     session.flush()
                     
-                    # Create initial monthly view record
+                    # Create initial monthly view record (start at 0 - only track incremental views from this point)
                     now = datetime.now(timezone.utc)
                     monthly_view = MonthlyView(
                         user_id=user.id,
                         video_id=video.id,
                         year=now.year,
                         month=now.month,
-                        views=stats.view_count,
+                        views=0,  # Start at 0 - only track views gained after adding to bot
                         updated_at=now
                     )
                     session.add(monthly_view)

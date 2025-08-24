@@ -143,7 +143,7 @@ def sync_automatic_channels():
                         video_id=video.id,
                         year=now.year,
                         month=now.month,
-                        views=stats.view_count,
+                        views=0,  # Start at 0 - only track views gained after adding to bot
                         updated_at=now
                     )
                     session.add(monthly_view)
