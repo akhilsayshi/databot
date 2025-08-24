@@ -1,7 +1,7 @@
 # Deployment Check File
 # This file helps verify the correct commit is being deployed
 
-COMMIT_HASH: [TO_BE_UPDATED]
+COMMIT_HASH: 55f1520
 FIXED_ISSUES:
 - ✅ Dependency conflicts resolved (removed kombu/billiard explicit versions)
 - ✅ Redis plan set to starter (existing instance)
