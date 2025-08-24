@@ -364,7 +364,7 @@ def fetch_video_stats(video_id: str) -> Optional[YouTubeVideoStats]:
             "like_count": stats.like_count
         })
         
-        # Cache for 5 minutes
+        # Cache for 2 hours (extended from 5 minutes to reduce API calls)
         try:
             cache_set_json(cache_key, {
                 "video_id": stats.video_id,
@@ -375,7 +375,7 @@ def fetch_video_stats(video_id: str) -> Optional[YouTubeVideoStats]:
                 "view_count": stats.view_count,
                 "like_count": stats.like_count,
                 "comment_count": stats.comment_count
-            }, 300)
+            }, 7200)  # 2 hours = 7200 seconds
         except Exception as e:
             logger.warning("Failed to cache video stats", extra={
                 "video_id": video_id,
@@ -588,7 +588,7 @@ def fetch_channel_info(channel_id: str) -> Optional[YouTubeChannelInfo]:
             "subscriber_count": info.subscriber_count
         })
         
-        # Cache for 10 minutes
+        # Cache for 4 hours (extended from 10 minutes to reduce API calls)
         try:
             cache_set_json(cache_key, {
                 "channel_id": info.channel_id,
@@ -597,7 +597,7 @@ def fetch_channel_info(channel_id: str) -> Optional[YouTubeChannelInfo]:
                 "subscriber_count": info.subscriber_count,
                 "video_count": info.video_count,
                 "view_count": info.view_count
-            }, 600)
+            }, 14400)  # 4 hours = 14400 seconds
         except Exception as e:
             logger.warning("Failed to cache channel info", extra={
                 "channel_id": channel_id,

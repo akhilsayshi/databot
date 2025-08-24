@@ -217,31 +217,77 @@ def generate_monthly_summary():
 
 @celery_app.task
 def cleanup_old_data():
-    """Clean up old data to keep the database manageable"""
+    """Clean up old data to keep the database manageable and optimize API usage"""
     with session_scope() as session:
-        # Remove monthly views older than 2 years
-        cutoff_date = datetime.now(timezone.utc) - timedelta(days=730)
-        cutoff_year = cutoff_date.year
-        cutoff_month = cutoff_date.month
+        now = datetime.now(timezone.utc)
         
-        deleted_count = session.execute(
+        # Calculate 2-month cutoff for video cleanup
+        video_cutoff_date = now - timedelta(days=60)  # 2 months
+        
+        # Calculate 2-year cutoff for monthly view cleanup
+        monthly_cutoff_date = now - timedelta(days=730)  # 2 years
+        monthly_cutoff_year = monthly_cutoff_date.year
+        monthly_cutoff_month = monthly_cutoff_date.month
+        
+        # Step 1: Clean up videos older than 2 months (reduces API load)
+        old_videos = session.execute(
+            select(Video).where(
+                and_(
+                    Video.created_at < video_cutoff_date,
+                    Video.is_active == True
+                )
+            )
+        ).scalars().all()
+        
+        deactivated_videos = 0
+        deleted_monthly_views = 0
+        
+        for video in old_videos:
+            # Mark video as inactive (stops tracking without losing data)
+            video.is_active = False
+            deactivated_videos += 1
+            
+            # Clean up monthly views for deactivated videos
+            monthly_views_deleted = session.execute(
+                select(func.count(MonthlyView.id)).where(
+                    MonthlyView.video_id == video.id
+                )
+            ).scalar() or 0
+            
+            if monthly_views_deleted > 0:
+                session.execute(
+                    MonthlyView.__table__.delete().where(
+                        MonthlyView.video_id == video.id
+                    )
+                )
+                deleted_monthly_views += monthly_views_deleted
+        
+        # Step 2: Clean up old monthly view records (older than 2 years)
+        old_monthly_views = session.execute(
             select(func.count(MonthlyView.id)).where(
                 and_(
-                    MonthlyView.year < cutoff_year,
-                    MonthlyView.month < cutoff_month
+                    MonthlyView.year < monthly_cutoff_year,
+                    MonthlyView.month < monthly_cutoff_month
                 )
             )
         ).scalar() or 0
         
-        if deleted_count > 0:
+        if old_monthly_views > 0:
             session.execute(
                 MonthlyView.__table__.delete().where(
                     and_(
-                        MonthlyView.year < cutoff_year,
-                        MonthlyView.month < cutoff_month
+                        MonthlyView.year < monthly_cutoff_year,
+                        MonthlyView.month < monthly_cutoff_month
                     )
                 )
             )
-            bot_logger.info(f"Cleaned up {deleted_count} old monthly view records")
+            deleted_monthly_views += old_monthly_views
         
-        return {"cleaned_records": deleted_count}
+        bot_logger.info(f"Cleanup complete: {deactivated_videos} videos deactivated (2+ months old), {deleted_monthly_views} monthly view records deleted")
+        
+        return {
+            "deactivated_videos": deactivated_videos,
+            "deleted_monthly_views": deleted_monthly_views,
+            "video_cutoff_days": 60,
+            "monthly_cutoff_days": 730
+        }

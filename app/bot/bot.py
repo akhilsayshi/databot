@@ -252,7 +252,8 @@ async def help_command(ctx: commands.Context):
         name="⚙️ Management",
         value=(
             "`!sync` - Sync all videos from verified channels\n"
-            "`!remove <video_id>` - Remove video from tracking"
+            "`!remove <video_id>` - Remove video from tracking\n"
+            "`!reset_monthly` - Reset monthly tracking to start fresh"
         ),
         inline=False
     )
@@ -1672,6 +1673,99 @@ def main() -> None:
         raise
     finally:
         _bot_running = False
+
+
+@bot.command(name="reset_monthly")
+@error_handler
+async def reset_monthly_command(ctx: commands.Context):
+    """Reset monthly view tracking to start fresh (Admin only)"""
+    
+    # Show processing message
+    processing_embed = discord.Embed(
+        title="🔄 Resetting Monthly Tracking",
+        description="Clearing old total view counts and setting fresh baselines...",
+        color=0xffff00
+    )
+    processing_msg = await ctx.send(embed=processing_embed)
+    
+    with session_scope() as session:
+        now = datetime.now(timezone.utc)
+        
+        # Get all active videos
+        videos = session.execute(
+            select(Video).where(Video.is_active == True)
+        ).scalars().all()
+        
+        reset_count = 0
+        error_count = 0
+        
+        for video in videos:
+            try:
+                # Get current YouTube stats for baseline
+                current_stats = fetch_video_stats(video.video_id)
+                if not current_stats:
+                    error_count += 1
+                    continue
+                
+                # Update video's last_view_count to current total
+                video.last_view_count = current_stats.view_count
+                video.last_updated_at = now
+                
+                # Delete existing monthly view record for current month
+                existing_monthly = session.execute(
+                    select(MonthlyView).where(
+                        and_(
+                            MonthlyView.video_id == video.id,
+                            MonthlyView.year == now.year,
+                            MonthlyView.month == now.month
+                        )
+                    )
+                ).scalar_one_or_none()
+                
+                if existing_monthly:
+                    session.delete(existing_monthly)
+                
+                # Create fresh monthly view record starting at 0
+                fresh_monthly = MonthlyView(
+                    user_id=video.user_id,
+                    video_id=video.id,
+                    year=now.year,
+                    month=now.month,
+                    views=0,  # Start at 0 - only track future incremental views
+                    updated_at=now
+                )
+                session.add(fresh_monthly)
+                
+                reset_count += 1
+                
+            except Exception as e:
+                error_count += 1
+                bot_logger.error(f"Error resetting video {video.video_id}: {e}")
+                continue
+        
+        # Commit all changes
+        session.commit()
+        
+        # Update the message with results
+        embed = discord.Embed(
+            title="✅ Monthly Tracking Reset Complete",
+            description=f"Successfully reset {reset_count} videos to start monthly tracking from 0.",
+            color=0x00ff00
+        )
+        
+        embed.add_field(
+            name="📊 Results",
+            value=f"**Reset:** {reset_count} videos\n**Errors:** {error_count} videos",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="🎯 What This Means",
+            value="• Monthly views now start at 0\n• Only NEW views will be counted\n• Old total views are set as baselines\n• Next !stats will show correct incremental tracking",
+            inline=False
+        )
+        
+        await processing_msg.edit(embed=embed)
 
 
 if __name__ == "__main__":

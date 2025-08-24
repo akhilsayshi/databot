@@ -26,19 +26,19 @@ celery_app.conf.task_routes = {
     "app.tasks.automatic_tracking.*": {"queue": "auto"},
 }
 
-# Configure periodic tasks
+# Configure periodic tasks optimized for YouTube API quota management
 celery_app.conf.beat_schedule = {
-    "refresh-all-every-2h": {
-        "task": "app.tasks.refresh_stats.refresh_all",
-        "schedule": 2 * 60 * 60,  # 2 hours in seconds
+    "refresh-video-stats-every-6h": {
+        "task": "app.tasks.refresh_stats.refresh_video_stats",
+        "schedule": 6 * 60 * 60,  # 6 hours (reduced from 2h to save quota)
     },
-    "sync-automatic-channels-every-6h": {
+    "sync-automatic-channels-every-12h": {
         "task": "app.tasks.refresh_stats.sync_automatic_channels",
-        "schedule": 6 * 60 * 60,  # 6 hours in seconds
+        "schedule": 12 * 60 * 60,  # 12 hours (reduced from 6h to save quota)
     },
-    "sync-new-videos-every-4h": {
+    "sync-new-videos-every-8h": {
         "task": "app.tasks.automatic_tracking.sync_new_videos_from_channels",
-        "schedule": 4 * 60 * 60,  # 4 hours in seconds
+        "schedule": 8 * 60 * 60,  # 8 hours (reduced from 4h to save quota)
     },
     "check-monthly-reports-daily": {
         "task": "app.tasks.monthly_reports.trigger_monthly_reports_if_needed",
@@ -48,9 +48,9 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.automatic_tracking.generate_monthly_summary",
         "schedule": 24 * 60 * 60,  # Daily at midnight
     },
-    "cleanup-old-data-weekly": {
+    "cleanup-old-data-daily": {
         "task": "app.tasks.automatic_tracking.cleanup_old_data",
-        "schedule": 7 * 24 * 60 * 60,  # Weekly
+        "schedule": 24 * 60 * 60,  # Daily (changed from weekly for 2-month video cleanup)
     }
 }
 
