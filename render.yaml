@@ -103,7 +103,7 @@ services:
   # =============================================================================
   - type: redis
     name: databot-redis
-    plan: free  # Free tier - 25MB RAM, shared CPU
+    plan: starter  # $7/month - 256MB RAM, shared CPU
     maxmemoryPolicy: allkeys-lru
     ipAllowList: []  # Allow all IPs for internal service communication
 
@@ -144,7 +144,7 @@ databases:
 # 3. Create a new "Blueprint" deployment
 # 4. Render will automatically:
 #    - Provision PostgreSQL database (free plan)
-#    - Provision Redis cache
+#    - Use existing Redis cache (starter plan)
 #    - Deploy the background worker (bot)
 #    - Deploy Celery worker
 #    - Deploy Celery beat scheduler
@@ -160,9 +160,9 @@ databases:
 # - Celery Worker: $7  
 # - Celery Scheduler: $7
 # - PostgreSQL Database: $0 (free plan)
-# - Redis Cache: $0 (free plan)
+# - Redis Cache: $7 (starter plan - cannot downgrade existing)
 # 
-# Total: ~$21/month for full production deployment with all features
+# Total: ~$28/month for full production deployment with all features
 #
 # =============================================================================
 # FEATURES INCLUDED
