@@ -99,17 +99,19 @@ def sync_new_videos_from_channels():
                             ).scalar_one_or_none()
                             
                             if monthly_view:
-                                monthly_view.views = stats.view_count
-                                monthly_view.views_change = view_change
+                                # Add only incremental view change to monthly total
+                                if view_change > 0:
+                                    monthly_view.views += view_change
                                 monthly_view.updated_at = now
                             else:
+                                # Create new monthly view record starting from current baseline
                                 monthly_view = MonthlyView(
                                     user_id=video.user_id,
                                     video_id=video.id,
                                     year=now.year,
                                     month=now.month,
-                                    views=stats.view_count,
-                                    views_change=view_change,
+                                    views=0,  # Start at 0 - only track incremental views
+                                    views_change=0,
                                     updated_at=now
                                 )
                                 session.add(monthly_view)

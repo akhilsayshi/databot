@@ -113,19 +113,19 @@ def generate_user_monthly_report(user_id: int):
                     ).scalar_one_or_none()
                     
                     if monthly_view:
-                        # Calculate final view change for the month
-                        views_change = stats.view_count - monthly_view.views
-                        monthly_view.views = stats.view_count
-                        monthly_view.views_change = views_change
+                        # Calculate incremental view change since last update
+                        views_change = stats.view_count - video.last_view_count
+                        if views_change > 0:
+                            monthly_view.views += views_change  # Add only new views to monthly total
                         monthly_view.updated_at = now
                     else:
-                        # Create final monthly view record
+                        # Create monthly view record starting from current baseline
                         monthly_view = MonthlyView(
                             user_id=user.id,
                             video_id=video.id,
                             year=report_year,
                             month=report_month,
-                            views=stats.view_count,
+                            views=0,  # Start at 0 - only track incremental views
                             views_change=0,
                             updated_at=now
                         )
@@ -362,19 +362,19 @@ def refresh_user_video_stats(user_id: int):
                 ).scalar_one_or_none()
                 
                 if monthly_view:
-                    # Calculate view change
-                    views_change = stats.view_count - monthly_view.views
-                    monthly_view.views = stats.view_count
-                    monthly_view.views_change = views_change
+                    # Calculate incremental view change since last update
+                    views_change = stats.view_count - video.last_view_count
+                    if views_change > 0:
+                        monthly_view.views += views_change  # Add only new views to monthly total
                     monthly_view.updated_at = now
                 else:
-                    # Create new monthly view record
+                    # Create new monthly view record starting from current baseline
                     monthly_view = MonthlyView(
                         user_id=user.id,
                         video_id=video.id,
                         year=now.year,
                         month=now.month,
-                        views=stats.view_count,
+                        views=0,  # Start at 0 - only track incremental views
                         views_change=0,
                         updated_at=now
                     )
