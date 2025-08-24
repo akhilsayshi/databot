@@ -243,6 +243,7 @@ async def help_command(ctx: commands.Context):
             "`!report [month] [year]` - Generate live monthly report\n"
             "`!monthly` - Show monthly summary\n"
             "`!quota` - Show YouTube API quota status\n"
+            "`!test_api` - Test API functionality and quota system\n"
             "`!fix_monthly` - Fix monthly view tracking (reset to incremental)\n"
             "`!channels` - List your channels\n"
             "`!videos` - List tracked videos"
@@ -909,20 +910,28 @@ async def stats_command(ctx: commands.Context):
                     
                     if monthly_view:
                         # Update existing monthly record with ONLY incremental views
+                        old_monthly_views = monthly_view.views
                         if view_change > 0:
                             monthly_view.views += view_change  # Add only new views to monthly total
                         monthly_view.updated_at = now
+                        
+                        # Debug logging for monthly view tracking
+                        bot_logger.debug(f"Updated monthly views for {video.title or video.video_id}: {old_monthly_views} + {view_change} = {monthly_view.views}")
                     else:
                         # Create new monthly record starting from 0
+                        new_monthly_views = max(0, view_change)  # Only track new views gained this month
                         monthly_view = MonthlyView(
                             user_id=user.id,
                             video_id=video.id,
                             year=now.year,
                             month=now.month,
-                            views=max(0, view_change),  # Only track new views gained this month
+                            views=new_monthly_views,
                             updated_at=now
                         )
                         session.add(monthly_view)
+                        
+                        # Debug logging for new monthly view tracking
+                        bot_logger.debug(f"Created new monthly view record for {video.title or video.video_id}: {new_monthly_views} views")
                     
                     # Add to totals
                     monthly_views_total += monthly_view.views
@@ -1049,6 +1058,69 @@ async def stats_command(ctx: commands.Context):
         embed.set_footer(text=f"Last updated: {now.strftime('%Y-%m-%d %H:%M:%S')} UTC | Auto-sync enabled")
         
         await processing_msg.edit(embed=embed)
+
+
+@bot.command(name="test_api")
+@error_handler
+@require_clipper_role()
+async def test_api_command(ctx: commands.Context):
+    """Test YouTube API functionality and quota management"""
+    
+    embed = discord.Embed(
+        title="🧪 Testing YouTube API & Quota System",
+        description="Running API tests...",
+        color=0xffff00
+    )
+    message = await ctx.send(embed=embed)
+    
+    try:
+        # Test 1: Check quota status
+        quota_status = await quota_manager.get_quota_status()
+        test1_result = "✅ Quota manager working"
+        
+        # Test 2: Test video stats fetching
+        test_video_id = "dQw4w9WgXcQ"  # Rick Roll video (always exists)
+        stats = fetch_video_stats(test_video_id)
+        test2_result = "✅ Video stats working" if stats else "❌ Video stats failed"
+        
+        # Test 3: Test caching
+        stats2 = fetch_video_stats(test_video_id)  # Should be cached
+        test3_result = "✅ Caching working" if stats2 else "❌ Caching failed"
+        
+        # Update embed with results
+        embed = discord.Embed(
+            title="🧪 API Test Results",
+            color=0x00ff00
+        )
+        
+        embed.add_field(
+            name="Test Results",
+            value=f"{test1_result}\n{test2_result}\n{test3_result}",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="Quota Usage",
+            value=f"Daily: {quota_status['daily']['used']}/{quota_status['daily']['limit']}\nHourly: {quota_status['hourly']['used']}/{quota_status['hourly']['limit']}",
+            inline=True
+        )
+        
+        if stats:
+            embed.add_field(
+                name="Sample Video",
+                value=f"Title: {stats.title}\nViews: {format_number(stats.view_count)}",
+                inline=True
+            )
+        
+        await message.edit(embed=embed)
+        
+    except Exception as e:
+        embed = discord.Embed(
+            title="❌ API Test Failed",
+            description=f"Error: {str(e)}",
+            color=0xff0000
+        )
+        await message.edit(embed=embed)
 
 
 @bot.command(name="quota")

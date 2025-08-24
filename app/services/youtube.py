@@ -412,13 +412,152 @@ async def fetch_video_stats_async(video_id: str) -> Optional[YouTubeVideoStats]:
 
 
 def fetch_video_stats(video_id: str) -> Optional[YouTubeVideoStats]:
-    """Synchronous wrapper for fetch_video_stats_async"""
+    """Synchronous wrapper for fetch_video_stats_async - runs in Discord bot's event loop"""
     try:
+        # For Discord bots, we need to schedule the coroutine in the current event loop
         loop = asyncio.get_event_loop()
-        return loop.run_until_complete(fetch_video_stats_async(video_id))
+        if loop.is_running():
+            # Create a task and run it
+            task = loop.create_task(fetch_video_stats_async(video_id))
+            # This won't work in running loop, so we need a different approach
+            # Fall back to sync version for now
+            return _fetch_video_stats_sync(video_id)
+        else:
+            return loop.run_until_complete(fetch_video_stats_async(video_id))
     except RuntimeError:
-        # No event loop running, create a new one
-        return asyncio.run(fetch_video_stats_async(video_id))
+        # No event loop, use sync version
+        return _fetch_video_stats_sync(video_id)
+    except Exception as e:
+        logger.error("Error in fetch_video_stats wrapper", extra={
+            "video_id": video_id,
+            "error": str(e)
+        })
+        return _fetch_video_stats_sync(video_id)
+
+
+def _fetch_video_stats_sync(video_id: str) -> Optional[YouTubeVideoStats]:
+    """Synchronous version with basic quota awareness"""
+    if not video_id or not settings.youtube_api_key:
+        logger.warning("Missing video ID or YouTube API key", extra={
+            "video_id": video_id,
+            "has_api_key": bool(settings.youtube_api_key)
+        })
+        return None
+    
+    cache_key = f"youtube:video:{video_id}"
+    
+    # Check cache first
+    cached = cache_get_json(cache_key)
+    if cached:
+        try:
+            # Handle datetime conversion from cache
+            if cached.get("published_at"):
+                cached["published_at"] = datetime.fromisoformat(cached["published_at"])
+            stats = YouTubeVideoStats(**cached)
+            logger.info("Retrieved video stats from cache", extra={
+                "video_id": video_id,
+                "view_count": stats.view_count
+            })
+            return stats
+        except Exception as e:
+            logger.warning("Failed to parse cached video stats", extra={
+                "video_id": video_id,
+                "error": str(e)
+            })
+    
+    # Add basic delay for rate limiting (sync version)
+    import time
+    time.sleep(0.2)  # 200ms delay between requests
+    
+    logger.info("Fetching video stats from YouTube API (sync)", extra={"video_id": video_id})
+    
+    params = {
+        "id": video_id,
+        "part": "snippet,statistics",
+        "key": settings.youtube_api_key,
+    }
+    
+    try:
+        resp = requests.get("https://www.googleapis.com/youtube/v3/videos", params=params, timeout=15)
+        if resp.status_code != 200:
+            logger.error("YouTube API request failed (sync)", extra={
+                "video_id": video_id,
+                "status_code": resp.status_code
+            })
+            return None
+        
+        data = resp.json()
+        items = data.get("items", [])
+        if not items:
+            logger.warning("Video not found in YouTube API response (sync)", extra={"video_id": video_id})
+            return None
+        
+        item = items[0]
+        snippet = item.get("snippet", {})
+        statistics = item.get("statistics", {})
+        
+        # Parse published date
+        published_at = None
+        if snippet.get("publishedAt"):
+            try:
+                published_at = datetime.fromisoformat(snippet["publishedAt"].replace("Z", "+00:00"))
+            except ValueError as e:
+                logger.warning("Failed to parse published date (sync)", extra={
+                    "video_id": video_id,
+                    "published_at": snippet["publishedAt"],
+                    "error": str(e)
+                })
+        
+        stats = YouTubeVideoStats(
+            video_id=video_id,
+            title=snippet.get("title"),
+            description=snippet.get("description"),
+            thumbnail_url=snippet.get("thumbnails", {}).get("medium", {}).get("url"),
+            published_at=published_at,
+            view_count=int(statistics.get("viewCount", 0)),
+            like_count=int(statistics.get("likeCount", 0)),
+            comment_count=int(statistics.get("commentCount", 0))
+        )
+        
+        logger.info("Successfully fetched video stats (sync)", extra={
+            "video_id": video_id,
+            "title": stats.title,
+            "view_count": stats.view_count,
+            "like_count": stats.like_count
+        })
+        
+        # Cache for 2 hours
+        try:
+            cache_set_json(cache_key, {
+                "video_id": stats.video_id,
+                "title": stats.title,
+                "description": stats.description,
+                "thumbnail_url": stats.thumbnail_url,
+                "published_at": stats.published_at.isoformat() if stats.published_at else None,
+                "view_count": stats.view_count,
+                "like_count": stats.like_count,
+                "comment_count": stats.comment_count
+            }, 7200)
+        except Exception as e:
+            logger.warning("Failed to cache video stats (sync)", extra={
+                "video_id": video_id,
+                "error": str(e)
+            })
+        
+        return stats
+        
+    except (RequestException, Timeout) as e:
+        logger.error("Request failed for video stats (sync)", extra={
+            "video_id": video_id,
+            "error": str(e)
+        })
+        return None
+    except Exception as e:
+        logger.error("Unexpected error fetching video stats (sync)", extra={
+            "video_id": video_id,
+            "error": str(e)
+        })
+        return None
 
 
 def get_video_channel_id(video_id: str) -> Optional[str]:
@@ -569,6 +708,10 @@ def fetch_channel_info(channel_id: str) -> Optional[YouTubeChannelInfo]:
         })
         return info
     
+    # Add basic delay for rate limiting
+    import time
+    time.sleep(0.2)  # 200ms delay between requests
+    
     logger.info("Fetching channel info from YouTube API", extra={"channel_id": channel_id})
     
     params = {
@@ -651,6 +794,10 @@ def fetch_channel_videos(channel_id: str, max_results: int = 50) -> List[YouTube
             "has_api_key": bool(settings.youtube_api_key)
         })
         return []
+    
+    # Add basic delay for rate limiting
+    import time
+    time.sleep(0.2)  # 200ms delay between requests
     
     logger.info("Fetching channel videos", extra={
         "channel_id": channel_id,
