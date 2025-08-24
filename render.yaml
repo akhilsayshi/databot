@@ -114,7 +114,7 @@ databases:
   - name: databot-db
     databaseName: databot
     user: databot
-    plan: starter  # $7/month - 1GB storage, shared CPU (paid plan to avoid free tier limit)
+    plan: free  # Free tier - 1GB storage, shared CPU
 
 # =============================================================================
 # SECRETS (Configure these in Render Dashboard)
@@ -143,7 +143,7 @@ databases:
 # 2. Connect your GitHub repository to Render
 # 3. Create a new "Blueprint" deployment
 # 4. Render will automatically:
-#    - Provision PostgreSQL database (starter plan)
+#    - Provision PostgreSQL database (free plan)
 #    - Provision Redis cache
 #    - Deploy the background worker (bot)
 #    - Deploy Celery worker
@@ -159,10 +159,10 @@ databases:
 # - Background Worker (Bot): $7
 # - Celery Worker: $7  
 # - Celery Scheduler: $7
-# - PostgreSQL Database: $7 (starter plan)
+# - PostgreSQL Database: $0 (free plan)
 # - Redis Cache: $7
 # 
-# Total: ~$35/month for full production deployment with all features
+# Total: ~$28/month for full production deployment with all features
 #
 # =============================================================================
 # FEATURES INCLUDED
