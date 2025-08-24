@@ -33,9 +33,14 @@ services:
       - key: YOUTUBE_API_KEY
         sync: false
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: databot-db
+          property: connectionString
       - key: REDIS_URL
-        sync: false
+        fromService:
+          type: redis
+          name: databot-redis
+          property: connectionString
     autoDeploy: true
     branch: main
 
@@ -56,9 +61,14 @@ services:
       - key: YOUTUBE_API_KEY
         sync: false
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: databot-db
+          property: connectionString
       - key: REDIS_URL
-        sync: false
+        fromService:
+          type: redis
+          name: databot-redis
+          property: connectionString
     autoDeploy: true
     branch: main
 
@@ -77,14 +87,34 @@ services:
       - key: LOG_LEVEL
         value: INFO
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: databot-db
+          property: connectionString
       - key: REDIS_URL
-        sync: false
+        fromService:
+          type: redis
+          name: databot-redis
+          property: connectionString
     autoDeploy: true
     branch: main
 
-# Note: Using external database and Redis services
-# Configure DATABASE_URL and REDIS_URL manually in Render dashboard
+  # =============================================================================
+  # REDIS CACHE
+  # =============================================================================
+  - type: redis
+    name: databot-redis
+    plan: starter  # $7/month - 256MB RAM, shared CPU
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: []  # Allow all IPs for internal service communication
+
+databases:
+  # =============================================================================
+  # POSTGRESQL DATABASE
+  # =============================================================================
+  - name: databot-db
+    databaseName: databot
+    user: databot
+    plan: starter  # $7/month - 1GB storage, shared CPU (paid plan to avoid free tier limit)
 
 # =============================================================================
 # SECRETS (Configure these in Render Dashboard)
@@ -97,13 +127,13 @@ services:
 # 2. YOUTUBE_API_KEY: Your YouTube Data API v3 key
 #    - Go to Google Cloud Console → APIs & Services → Credentials
 # 
-# 3. DATABASE_URL: PostgreSQL connection string
-#    - Use your existing Render database or external PostgreSQL service
+# 3. DATABASE_URL: PostgreSQL connection string (auto-generated)
 #    - Format: postgresql://user:password@host:port/database
+#    - This will be automatically created when you provision the database
 # 
-# 4. REDIS_URL: Redis connection string
-#    - Use your existing Render Redis or external Redis service
+# 4. REDIS_URL: Redis connection string (auto-generated)
 #    - Format: redis://host:port/database
+#    - This will be automatically created when you provision Redis
 #
 # =============================================================================
 # DEPLOYMENT INSTRUCTIONS
@@ -113,10 +143,11 @@ services:
 # 2. Connect your GitHub repository to Render
 # 3. Create a new "Blueprint" deployment
 # 4. Render will automatically:
+#    - Provision PostgreSQL database (starter plan)
+#    - Provision Redis cache
 #    - Deploy the background worker (bot)
 #    - Deploy Celery worker
 #    - Deploy Celery beat scheduler
-# 5. Manually configure DATABASE_URL and REDIS_URL
 # 5. Configure secrets in Render dashboard
 # 6. Your bot will be available at: https://databot-bot.onrender.com
 #
@@ -128,9 +159,24 @@ services:
 # - Background Worker (Bot): $7
 # - Celery Worker: $7  
 # - Celery Scheduler: $7
-# - Database & Redis: Use existing services (Free)
+# - PostgreSQL Database: $7 (starter plan)
+# - Redis Cache: $7
 # 
-# Total: ~$21/month for full production deployment
+# Total: ~$35/month for full production deployment with all features
+#
+# =============================================================================
+# FEATURES INCLUDED
+# =============================================================================
+# 
+# ✅ All Discord commands work
+# ✅ Video tracking and management
+# ✅ User registration and roles
+# ✅ Automatic video stats updates
+# ✅ Scheduled background tasks
+# ✅ Monthly reports generation
+# ✅ Automatic video syncing from channels
+# ✅ Full database operations
+# ✅ Redis caching for performance
 #
 # =============================================================================
 # SCALING OPTIONS
