@@ -1,7 +1,7 @@
 # Deployment Check File
 # This file helps verify the correct commit is being deployed
 
-COMMIT_HASH: 4e781b1
+COMMIT_HASH: 25df76a
 FIXED_ISSUES:
 - ✅ Dependency conflicts resolved (removed kombu/billiard explicit versions)
 - ✅ Redis plan set to starter (existing instance)
@@ -12,9 +12,12 @@ FIXED_ISSUES:
 - ✅ Updated to Filian clipping community TOS
 - ✅ Monthly view tracking fixed (starts at 0, incremental only)
 - ✅ No more total view counting
+- ✅ Old bot instance termination implemented
+- ✅ aiohttp connector warnings suppressed
+- ✅ Improved bot cleanup and disconnect handling
 
 LAST_UPDATE: 2024-12-19
-DEPLOYMENT_TRIGGER: 2024-12-19T15:30:00Z
+DEPLOYMENT_TRIGGER: 2024-12-19T16:00:00Z
 EXPECTED_DEPENDENCIES:
 - celery==5.5.3 (should auto-resolve kombu>=5.5.2,<5.6)
 - No explicit kombu or billiard versions
