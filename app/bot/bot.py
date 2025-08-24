@@ -801,7 +801,7 @@ async def stats_command(ctx: commands.Context):
         
         # Fetch real-time stats for all videos
         updated_videos = []
-        total_views = 0
+        monthly_views_total = 0
         total_likes = 0
         update_errors = 0
         
@@ -848,7 +848,7 @@ async def stats_command(ctx: commands.Context):
                         session.add(monthly_view)
                     
                     # Add to totals
-                    total_views += current_stats.view_count
+                    monthly_views_total += monthly_view.views
                     total_likes += current_stats.like_count
                     
                     # Store for display
@@ -872,15 +872,15 @@ async def stats_command(ctx: commands.Context):
         # Create stats embed
         now = datetime.now(timezone.utc)
         embed = discord.Embed(
-            title="📊 Live Stats Updated",
-            description=f"**{now.strftime('%B %Y')}** - {format_number(total_views)} views ({len(updated_videos)} videos)",
+            title="📊 Monthly Views Updated",
+            description=f"**{now.strftime('%B %Y')}** - {format_number(monthly_views_total)} monthly views ({len(updated_videos)} videos)",
             color=0x00ff00
         )
         
         # Add summary stats
         embed.add_field(
             name="📈 Summary",
-            value=f"Total Views: {format_number(total_views)}\nTotal Likes: {format_number(total_likes)}\nVideos: {len(updated_videos)}",
+            value=f"Monthly Views: {format_number(monthly_views_total)}\nTotal Likes: {format_number(total_likes)}\nVideos: {len(updated_videos)}",
             inline=True
         )
         
@@ -900,8 +900,22 @@ async def stats_command(ctx: commands.Context):
         
         # Add top performing videos
         if updated_videos:
-            # Sort by current view count
-            top_videos = sorted(updated_videos, key=lambda x: x['stats'].view_count, reverse=True)[:5]
+            # Sort by monthly views instead of total views
+            def get_monthly_views(video_data):
+                video = video_data['video']
+                monthly_view = session.execute(
+                    select(MonthlyView).where(
+                        and_(
+                            MonthlyView.user_id == user.id,
+                            MonthlyView.video_id == video.id,
+                            MonthlyView.year == now.year,
+                            MonthlyView.month == now.month
+                        )
+                    )
+                ).scalar_one_or_none()
+                return monthly_view.views if monthly_view else 0
+            
+            top_videos = sorted(updated_videos, key=get_monthly_views, reverse=True)[:5]
             
             top_videos_text = []
             for i, video_data in enumerate(top_videos, 1):
@@ -912,7 +926,20 @@ async def stats_command(ctx: commands.Context):
                 title = video.title or f"Video {video.video_id}"
                 change_text = f" (+{format_number(change)})" if change > 0 else f" ({format_number(change)})" if change < 0 else ""
                 
-                top_videos_text.append(f"{i}. {title} - {format_number(stats.view_count)}{change_text}")
+                # Get monthly views for this video
+                monthly_view = session.execute(
+                    select(MonthlyView).where(
+                        and_(
+                            MonthlyView.user_id == user.id,
+                            MonthlyView.video_id == video.id,
+                            MonthlyView.year == now.year,
+                            MonthlyView.month == now.month
+                        )
+                    )
+                ).scalar_one_or_none()
+                
+                monthly_views = monthly_view.views if monthly_view else 0
+                top_videos_text.append(f"{i}. {title} - {format_number(monthly_views)} monthly views")
             
             embed.add_field(
                 name="🏆 Top Videos",
@@ -983,20 +1010,20 @@ async def monthly_command(ctx: commands.Context):
             return
         
         # Calculate totals
-        total_views = sum(mv.views for mv in monthly_views)
+        monthly_views_total = sum(mv.views for mv in monthly_views)
         total_videos = len(monthly_views)
         total_changes = sum(mv.views_change for mv in monthly_views)
         
         embed = discord.Embed(
             title="📊 Monthly Summary",
-            description=f"**{now.strftime('%B %Y')}** - {format_number(total_views)} views ({total_videos} videos)",
+            description=f"**{now.strftime('%B %Y')}** - {format_number(monthly_views_total)} views ({total_videos} videos)",
             color=0x00ff00
         )
         
         # Add summary stats
         embed.add_field(
             name="📈 This Month",
-            value=f"Total Views: {format_number(total_views)}\nVideos: {total_videos}\nGrowth: {format_number(total_changes)}",
+            value=f"Monthly Views: {format_number(monthly_views_total)}\nVideos: {total_videos}\nGrowth: {format_number(total_changes)}",
             inline=True
         )
         
@@ -1104,7 +1131,7 @@ async def report_command(ctx: commands.Context, month: Optional[int] = None, yea
         
         # Fetch real-time stats for all videos
         updated_videos = []
-        total_views = 0
+        monthly_views_total = 0
         total_likes = 0
         update_errors = 0
         
@@ -1151,7 +1178,7 @@ async def report_command(ctx: commands.Context, month: Optional[int] = None, yea
                         session.add(monthly_view)
                     
                     # Add to totals
-                    total_views += current_stats.view_count
+                    monthly_views_total += monthly_view.views
                     total_likes += current_stats.like_count
                     
                     # Store for display
@@ -1188,7 +1215,7 @@ async def report_command(ctx: commands.Context, month: Optional[int] = None, yea
         ).scalar() or 0
         
         # Calculate month-over-month growth
-        growth = total_views - previous_month_views
+        growth = monthly_views_total - previous_month_views
         growth_percentage = (growth / previous_month_views * 100) if previous_month_views > 0 else 0
         
         # Create report embed
@@ -1204,7 +1231,7 @@ async def report_command(ctx: commands.Context, month: Optional[int] = None, yea
         
         embed.add_field(
             name="📈 Summary",
-            value=f"Total Views: {format_number(total_views)}\nTotal Likes: {format_number(total_likes)}\nVideos: {len(updated_videos)}\nGrowth: {growth_text}",
+            value=f"Monthly Views: {format_number(monthly_views_total)}\nTotal Likes: {format_number(total_likes)}\nVideos: {len(updated_videos)}\nGrowth: {growth_text}",
             inline=True
         )
         
@@ -1217,7 +1244,7 @@ async def report_command(ctx: commands.Context, month: Optional[int] = None, yea
             
             embed.add_field(
                 name="📅 Monthly Progress",
-                value=f"Day {days_elapsed}/{days_in_month}\nProgress: {progress_percentage:.1f}%\nAvg daily: {format_number(total_views // days_elapsed) if days_elapsed > 0 else 0}",
+                value=f"Day {days_elapsed}/{days_in_month}\nProgress: {progress_percentage:.1f}%\nAvg daily: {format_number(monthly_views_total // days_elapsed) if days_elapsed > 0 else 0}",
                 inline=True
             )
         else:
