@@ -1441,24 +1441,24 @@ class TOSView(discord.ui.View):
         try:
             await interaction.user.add_roles(clipper_role)
             
-                         embed = discord.Embed(
-                 title="✅ Terms of Service Accepted",
-                 description=(
-                     "**Welcome to the Filian Clipping Community!** 🎉\n\n"
-                     "You have successfully accepted the Terms of Service and received the **clipper** role.\n\n"
-                     "**You can now use all DataBot commands:**\n"
-                     "• `!verify <channel_url>` - Add your YouTube/TikTok/Instagram channel\n"
-                     "• `!add <video_url>` - Track a video (monthly views only)\n"
-                     "• `!videos` - View your tracked videos\n"
-                     "• `!stats` - View monthly view statistics\n"
-                     "• `!help` - See all available commands\n\n"
-                     "**Happy clipping!** ✂️"
-                 ),
-                 color=0x00ff00
-             )
-             
-             # Add Filian-specific rules after acceptance
-             embed.add_field(
+            embed = discord.Embed(
+                title="✅ Terms of Service Accepted",
+                description=(
+                    "**Welcome to the Filian Clipping Community!** 🎉\n\n"
+                    "You have successfully accepted the Terms of Service and received the **clipper** role.\n\n"
+                    "**You can now use all DataBot commands:**\n"
+                    "• `!verify <channel_url>` - Add your YouTube/TikTok/Instagram channel\n"
+                    "• `!add <video_url>` - Track a video (monthly views only)\n"
+                    "• `!videos` - View your tracked videos\n"
+                    "• `!stats` - View monthly view statistics\n"
+                    "• `!help` - See all available commands\n\n"
+                    "**Happy clipping!** ✂️"
+                ),
+                color=0x00ff00
+            )
+            
+            # Add Filian-specific rules after acceptance
+            embed.add_field(
                  name="📜 Filian Clipping Rules & Guidelines",
                  value=(
                      "**🎯 Core Rules:**\n"
