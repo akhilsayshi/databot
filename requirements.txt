@@ -1,4 +1,4 @@
-# Core dependencies
+# Core dependencies - Fixed dependency conflicts
 discord.py==2.3.2
 SQLAlchemy==2.0.43
 psycopg2-binary==2.9.10
