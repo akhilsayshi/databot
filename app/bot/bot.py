@@ -40,6 +40,7 @@ from app.services.youtube import (
     fetch_channel_info_async, get_channel_id_from_username_async,
     get_video_channel_id
 )
+from app.services.quota_manager import quota_manager
 from app.tasks.monthly_reports import refresh_user_video_stats, sync_new_videos_for_user
 from app.utils.logger import bot_logger
 
@@ -241,6 +242,7 @@ async def help_command(ctx: commands.Context):
             "`!stats` - Show live stats & auto-sync videos\n"
             "`!report [month] [year]` - Generate live monthly report\n"
             "`!monthly` - Show monthly summary\n"
+            "`!quota` - Show YouTube API quota status\n"
             "`!fix_monthly` - Fix monthly view tracking (reset to incremental)\n"
             "`!channels` - List your channels\n"
             "`!videos` - List tracked videos"
@@ -1047,6 +1049,89 @@ async def stats_command(ctx: commands.Context):
         embed.set_footer(text=f"Last updated: {now.strftime('%Y-%m-%d %H:%M:%S')} UTC | Auto-sync enabled")
         
         await processing_msg.edit(embed=embed)
+
+
+@bot.command(name="quota")
+@error_handler
+@require_clipper_role()
+async def quota_command(ctx: commands.Context):
+    """Show YouTube API quota usage status"""
+    
+    try:
+        quota_status = await quota_manager.get_quota_status()
+        
+        embed = discord.Embed(
+            title="📊 YouTube API Quota Status",
+            description="Current API usage and rate limiting status",
+            color=0x00ff00
+        )
+        
+        # Daily quota
+        daily = quota_status["daily"]
+        daily_color = "🟢" if daily["percentage"] < 60 else "🟡" if daily["percentage"] < 80 else "🔴"
+        embed.add_field(
+            name=f"{daily_color} Daily Quota",
+            value=(
+                f"**Used:** {daily['used']:,} / {daily['limit']:,} ({daily['percentage']}%)\n"
+                f"**Remaining:** {daily['remaining']:,}\n"
+                f"**Requests:** {daily['requests_made']:,}\n"
+                f"**Errors:** {daily['errors']:,}"
+            ),
+            inline=True
+        )
+        
+        # Hourly quota
+        hourly = quota_status["hourly"]
+        hourly_color = "🟢" if hourly["percentage"] < 60 else "🟡" if hourly["percentage"] < 80 else "🔴"
+        embed.add_field(
+            name=f"{hourly_color} Hourly Quota",
+            value=(
+                f"**Used:** {hourly['used']:,} / {hourly['limit']:,} ({hourly['percentage']}%)\n"
+                f"**Remaining:** {hourly['remaining']:,}\n"
+                f"**Requests:** {hourly['requests_made']:,}\n"
+                f"**Errors:** {hourly['errors']:,}"
+            ),
+            inline=True
+        )
+        
+        # Rate limiting
+        rate = quota_status["rate_limiting"]
+        rate_color = "🟢" if rate["requests_last_minute"] < rate["limit_per_minute"] * 0.6 else "🟡" if rate["requests_last_minute"] < rate["limit_per_minute"] * 0.8 else "🔴"
+        embed.add_field(
+            name=f"{rate_color} Rate Limiting",
+            value=(
+                f"**Last Minute:** {rate['requests_last_minute']} / {rate['limit_per_minute']}\n"
+                f"**Last Second:** {rate['requests_last_second']} / {rate['limit_per_second']}\n"
+                f"**Status:** {'Rate limited' if rate['requests_last_minute'] >= rate['limit_per_minute'] else 'Normal'}"
+            ),
+            inline=True
+        )
+        
+        # Add quota information
+        embed.add_field(
+            name="💡 Quota Information",
+            value=(
+                "• Video stats cost **1 quota point**\n"
+                "• Channel info costs **1 quota point**\n"
+                "• Search requests cost **100 quota points**\n"
+                "• Bot automatically manages delays and limits"
+            ),
+            inline=False
+        )
+        
+        # Add footer with current time
+        now = datetime.now(timezone.utc)
+        embed.set_footer(text=f"Updated: {now.strftime('%Y-%m-%d %H:%M:%S')} UTC")
+        
+        await ctx.send(embed=embed)
+        
+    except Exception as e:
+        embed = discord.Embed(
+            title="❌ Quota Status Error",
+            description=f"Failed to get quota status: {str(e)}",
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
 
 
 @bot.command(name="fix_monthly")

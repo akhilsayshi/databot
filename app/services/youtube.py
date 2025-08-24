@@ -12,6 +12,7 @@ from requests.exceptions import RequestException, Timeout
 
 from app.config import settings
 from app.infrastructure.cache import cache_get_json, cache_set_json
+from app.services.quota_manager import quota_manager, QuotaType
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -276,8 +277,8 @@ def get_channel_id_from_username(username: str) -> Optional[str]:
     return None
 
 
-def fetch_video_stats(video_id: str) -> Optional[YouTubeVideoStats]:
-    """Fetch video statistics from YouTube API with caching"""
+async def fetch_video_stats_async(video_id: str) -> Optional[YouTubeVideoStats]:
+    """Fetch video statistics from YouTube API with quota management and caching"""
     if not video_id or not settings.youtube_api_key:
         logger.warning("Missing video ID or YouTube API key", extra={
             "video_id": video_id,
@@ -307,6 +308,11 @@ def fetch_video_stats(video_id: str) -> Optional[YouTubeVideoStats]:
             })
             # If cache is corrupted, continue to fetch fresh data
     
+    # Check quota and wait if needed
+    if not await quota_manager.wait_if_needed(QuotaType.VIDEO_STATS):
+        logger.error("YouTube API quota exceeded for video stats", extra={"video_id": video_id})
+        return None
+    
     logger.info("Fetching video stats from YouTube API", extra={"video_id": video_id})
     
     params = {
@@ -315,87 +321,104 @@ def fetch_video_stats(video_id: str) -> Optional[YouTubeVideoStats]:
         "key": settings.youtube_api_key,
     }
     
+    success = False
     try:
-        resp = requests.get("https://www.googleapis.com/youtube/v3/videos", params=params, timeout=15)
-        if resp.status_code != 200:
-            logger.error("YouTube API request failed", extra={
-                "video_id": video_id,
-                "status_code": resp.status_code
-            })
-            return None
+        async with aiohttp.ClientSession() as session:
+            async with session.get("https://www.googleapis.com/youtube/v3/videos", params=params, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                if resp.status != 200:
+                    logger.error("YouTube API request failed", extra={
+                        "video_id": video_id,
+                        "status_code": resp.status
+                    })
+                    await quota_manager.record_request(QuotaType.VIDEO_STATS, success=False)
+                    return None
+                
+                data = await resp.json()
+                items = data.get("items", [])
+                if not items:
+                    logger.warning("Video not found in YouTube API response", extra={"video_id": video_id})
+                    await quota_manager.record_request(QuotaType.VIDEO_STATS, success=False)
+                    return None
+                
+                item = items[0]
+                snippet = item.get("snippet", {})
+                statistics = item.get("statistics", {})
+                
+                # Parse published date
+                published_at = None
+                if snippet.get("publishedAt"):
+                    try:
+                        published_at = datetime.fromisoformat(snippet["publishedAt"].replace("Z", "+00:00"))
+                    except ValueError as e:
+                        logger.warning("Failed to parse published date", extra={
+                            "video_id": video_id,
+                            "published_at": snippet["publishedAt"],
+                            "error": str(e)
+                        })
+                
+                stats = YouTubeVideoStats(
+                    video_id=video_id,
+                    title=snippet.get("title"),
+                    description=snippet.get("description"),
+                    thumbnail_url=snippet.get("thumbnails", {}).get("medium", {}).get("url"),
+                    published_at=published_at,
+                    view_count=int(statistics.get("viewCount", 0)),
+                    like_count=int(statistics.get("likeCount", 0)),
+                    comment_count=int(statistics.get("commentCount", 0))
+                )
+                success = True
         
-        data = resp.json()
-        items = data.get("items", [])
-        if not items:
-            logger.warning("Video not found in YouTube API response", extra={"video_id": video_id})
-            return None
-        
-        item = items[0]
-        snippet = item.get("snippet", {})
-        statistics = item.get("statistics", {})
-        
-        # Parse published date
-        published_at = None
-        if snippet.get("publishedAt"):
-            try:
-                published_at = datetime.fromisoformat(snippet["publishedAt"].replace("Z", "+00:00"))
-            except ValueError as e:
-                logger.warning("Failed to parse published date", extra={
+                logger.info("Successfully fetched video stats", extra={
                     "video_id": video_id,
-                    "published_at": snippet["publishedAt"],
-                    "error": str(e)
+                    "title": stats.title,
+                    "view_count": stats.view_count,
+                    "like_count": stats.like_count
                 })
+                
+                # Cache for 2 hours (extended from 5 minutes to reduce API calls)
+                try:
+                    cache_set_json(cache_key, {
+                        "video_id": stats.video_id,
+                        "title": stats.title,
+                        "description": stats.description,
+                        "thumbnail_url": stats.thumbnail_url,
+                        "published_at": stats.published_at.isoformat() if stats.published_at else None,
+                        "view_count": stats.view_count,
+                        "like_count": stats.like_count,
+                        "comment_count": stats.comment_count
+                    }, 7200)  # 2 hours = 7200 seconds
+                except Exception as e:
+                    logger.warning("Failed to cache video stats", extra={
+                        "video_id": video_id,
+                        "error": str(e)
+                    })
+                
+                return stats
         
-        stats = YouTubeVideoStats(
-            video_id=video_id,
-            title=snippet.get("title"),
-            description=snippet.get("description"),
-            thumbnail_url=snippet.get("thumbnails", {}).get("medium", {}).get("url"),
-            published_at=published_at,
-            view_count=int(statistics.get("viewCount", 0)),
-            like_count=int(statistics.get("likeCount", 0)),
-            comment_count=int(statistics.get("commentCount", 0))
-        )
-        
-        logger.info("Successfully fetched video stats", extra={
-            "video_id": video_id,
-            "title": stats.title,
-            "view_count": stats.view_count,
-            "like_count": stats.like_count
-        })
-        
-        # Cache for 2 hours (extended from 5 minutes to reduce API calls)
-        try:
-            cache_set_json(cache_key, {
-                "video_id": stats.video_id,
-                "title": stats.title,
-                "description": stats.description,
-                "thumbnail_url": stats.thumbnail_url,
-                "published_at": stats.published_at.isoformat() if stats.published_at else None,
-                "view_count": stats.view_count,
-                "like_count": stats.like_count,
-                "comment_count": stats.comment_count
-            }, 7200)  # 2 hours = 7200 seconds
-        except Exception as e:
-            logger.warning("Failed to cache video stats", extra={
-                "video_id": video_id,
-                "error": str(e)
-            })
-        
-        return stats
-        
-    except (RequestException, Timeout) as e:
-        logger.error("Request failed for video stats", extra={
+    except asyncio.TimeoutError as e:
+        logger.error("Timeout for video stats", extra={
             "video_id": video_id,
             "error": str(e)
         })
-        return None
     except Exception as e:
         logger.error("Unexpected error fetching video stats", extra={
             "video_id": video_id,
             "error": str(e)
         })
-        return None
+    
+    # Record failed request
+    await quota_manager.record_request(QuotaType.VIDEO_STATS, success=False)
+    return None
+
+
+def fetch_video_stats(video_id: str) -> Optional[YouTubeVideoStats]:
+    """Synchronous wrapper for fetch_video_stats_async"""
+    try:
+        loop = asyncio.get_event_loop()
+        return loop.run_until_complete(fetch_video_stats_async(video_id))
+    except RuntimeError:
+        # No event loop running, create a new one
+        return asyncio.run(fetch_video_stats_async(video_id))
 
 
 def get_video_channel_id(video_id: str) -> Optional[str]:

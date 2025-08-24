@@ -36,6 +36,12 @@ class Settings:
     rate_limit_requests: int = int(os.getenv("RATE_LIMIT_REQUESTS", "10"))
     rate_limit_window: int = int(os.getenv("RATE_LIMIT_WINDOW", "60"))
     
+    # YouTube API quota management
+    youtube_daily_quota_limit: int = int(os.getenv("YOUTUBE_DAILY_QUOTA_LIMIT", "10000"))
+    youtube_hourly_quota_limit: int = int(os.getenv("YOUTUBE_HOURLY_QUOTA_LIMIT", "1000"))
+    youtube_requests_per_minute: int = int(os.getenv("YOUTUBE_REQUESTS_PER_MINUTE", "300"))
+    youtube_requests_per_second: int = int(os.getenv("YOUTUBE_REQUESTS_PER_SECOND", "5"))
+    
     # Cache configuration
     cache_ttl: int = int(os.getenv("CACHE_TTL", "3600"))
     
