@@ -153,6 +153,7 @@ async def help_command(ctx: commands.Context):
         name="📋 Core Commands",
         value=(
             "`!help` - Show this help message\n"
+            "`!render` - Accept Terms of Service to get clipper role\n"
             "`!register` - Register to get clipper role and access\n"
             "`!verify <url>` - Verify your YouTube channel\n"
             "`!done` - Complete verification after adding code\n"
@@ -187,7 +188,8 @@ async def help_command(ctx: commands.Context):
     embed.add_field(
         name="💡 Tips",
         value=(
-            "• **Start with `!register` to get access to all commands**\n"
+            "• **Start with `!render` to accept Terms of Service and get access**\n"
+            "• Use `!register` to read the complete rules and guidelines\n"
             "• Use `!verify <url> automatic` for auto-tracking all videos\n"
             "• Use `!verify <url> manual` for manual video tracking\n"
             "• Add the verification code to your channel description\n"
@@ -1504,6 +1506,132 @@ async def remove_command(ctx: commands.Context, video_id: str):
         )
         
         await ctx.send(embed=embed)
+
+
+class TOSView(discord.ui.View):
+    """View for Terms of Service acceptance"""
+    
+    def __init__(self, user_id: int):
+        super().__init__(timeout=300)  # 5 minute timeout
+        self.user_id = user_id
+    
+    @discord.ui.button(label="✅ Accept TOS", style=discord.ButtonStyle.green, emoji="📜")
+    async def accept_tos(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Handle TOS acceptance"""
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ This button is not for you!", ephemeral=True)
+            return
+        
+        # Get or create clipper role
+        clipper_role = discord.utils.get(interaction.guild.roles, name="clipper")
+        if not clipper_role:
+            try:
+                clipper_role = await interaction.guild.create_role(
+                    name="clipper",
+                    color=discord.Color.blue(),
+                    reason="DataBot TOS acceptance role"
+                )
+            except discord.Forbidden:
+                await interaction.response.send_message(
+                    "❌ Bot doesn't have permission to create roles. Please ask an admin to create a 'clipper' role.",
+                    ephemeral=True
+                )
+                return
+        
+        # Assign role to user
+        try:
+            await interaction.user.add_roles(clipper_role)
+            
+            embed = discord.Embed(
+                title="✅ Terms of Service Accepted",
+                description=(
+                    "**Welcome to DataBot!** 🎉\n\n"
+                    "You have successfully accepted the Terms of Service and received the **clipper** role.\n\n"
+                    "**You can now use all DataBot commands:**\n"
+                    "• `!register` - Read the full rules and guidelines\n"
+                    "• `!verify <channel_url>` - Add your YouTube channel\n"
+                    "• `!add <video_url>` - Track a video\n"
+                    "• `!videos` - View your tracked videos\n"
+                    "• `!stats` - View your video statistics\n"
+                    "• `!help` - See all available commands\n\n"
+                    "**Happy clipping!** ✂️"
+                ),
+                color=0x00ff00
+            )
+            
+            await interaction.response.send_message(embed=embed, ephemeral=False)
+            
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                "❌ Bot doesn't have permission to assign roles. Please ask an admin to assign the 'clipper' role manually.",
+                ephemeral=True
+            )
+    
+    @discord.ui.button(label="❌ Decline", style=discord.ButtonStyle.red, emoji="🚫")
+    async def decline_tos(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Handle TOS decline"""
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ This button is not for you!", ephemeral=True)
+            return
+        
+        embed = discord.Embed(
+            title="❌ Terms of Service Declined",
+            description=(
+                "You have declined the Terms of Service.\n\n"
+                "**You cannot use DataBot commands without accepting the TOS.**\n\n"
+                "If you change your mind, you can run `!render` again to accept the terms."
+            ),
+            color=0xff0000
+        )
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@bot.command(name="render")
+@error_handler
+async def render_command(ctx: commands.Context):
+    """Accept Terms of Service to get clipper role and access to all commands"""
+    
+    # Check if user already has clipper role
+    clipper_role = discord.utils.get(ctx.guild.roles, name="clipper")
+    if clipper_role and clipper_role in ctx.author.roles:
+        embed = discord.Embed(
+            title="✅ Already Registered",
+            description="You already have the clipper role and can use all commands!",
+            color=0x00ff00
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    # Create TOS embed
+    embed = discord.Embed(
+        title="📜 Terms of Service",
+        description=(
+            "**Welcome to DataBot!** 🎉\n\n"
+            "Before you can use DataBot commands, you must accept our Terms of Service.\n\n"
+            "**By accepting, you agree to:**\n"
+            "• Follow Discord's Terms of Service\n"
+            "• Be kind and respectful to other users\n"
+            "• Not use artificial growth or view botting\n"
+            "• Only upload appropriate content\n"
+            "• Respect content creators' rights\n"
+            "• Follow upload frequency guidelines\n\n"
+            "**Click the button below to accept the Terms of Service and receive the clipper role.**"
+        ),
+        color=0x0099ff
+    )
+    
+    embed.add_field(
+        name="📋 Full Rules",
+        value="Use `!register` after accepting to read the complete rules and guidelines.",
+        inline=False
+    )
+    
+    embed.set_footer(text="DataBot - Terms of Service • You have 5 minutes to respond")
+    
+    # Create and send the view with buttons
+    view = TOSView(ctx.author.id)
+    await ctx.send(embed=embed, view=view)
 
 
 def main() -> None:
