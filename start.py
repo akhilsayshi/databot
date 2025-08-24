@@ -85,11 +85,20 @@ def main():
     """Main startup function with enhanced error handling."""
     global _shutdown_requested
     
+    # Check worker type - only start Discord bot if this is the main bot worker
+    worker_type = os.getenv("WORKER_TYPE", "discord_bot")
+    
+    if worker_type != "discord_bot":
+        print(f"🔧 Worker Type: {worker_type}")
+        print("This is not the Discord bot worker. Exiting to prevent duplicate bots.")
+        print("Only Celery workers should reach this point.")
+        sys.exit(0)
+    
     # Setup signal handlers
     setup_signal_handlers()
     
-    print("🎯 DataBot Startup")
-    print("=" * 40)
+    print("🎯 DataBot Startup (Discord Bot Worker)")
+    print("=" * 50)
     
     # Check environment
     if not check_environment():
@@ -113,7 +122,7 @@ def main():
     except Exception as e:
         print(f"⚠️  Database initialization issue (continuing anyway): {e}")
     
-    print("\n🚀 Starting DataBot...")
+    print("\n🚀 Starting Discord Bot...")
     
     try:
         # Import and run the bot

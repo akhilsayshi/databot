@@ -16,6 +16,8 @@ services:
         value: production
       - key: LOG_LEVEL
         value: INFO
+      - key: WORKER_TYPE
+        value: discord_bot
       - key: COMMAND_PREFIX
         value: "!"
       - key: MAX_VIDEOS_PER_USER
@@ -58,6 +60,8 @@ services:
         value: production
       - key: LOG_LEVEL
         value: INFO
+      - key: WORKER_TYPE
+        value: celery_worker
       - key: YOUTUBE_API_KEY
         sync: false
       - key: DATABASE_URL
@@ -86,6 +90,8 @@ services:
         value: production
       - key: LOG_LEVEL
         value: INFO
+      - key: WORKER_TYPE
+        value: celery_scheduler
       - key: DATABASE_URL
         fromDatabase:
           name: databot-db
