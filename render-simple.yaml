@@ -1,0 +1,97 @@
+# DataBot Simple Render Deployment Configuration
+# This file defines a minimal deployment with just the main bot
+
+services:
+  # =============================================================================
+  # MAIN BOT APPLICATION (ONLY)
+  # =============================================================================
+  - type: worker
+    name: databot-bot
+    env: python
+    plan: starter  # $7/month - 512MB RAM, 0.1 CPU
+    buildCommand: pip install -r requirements.txt
+    startCommand: python start.py
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      - key: COMMAND_PREFIX
+        value: "!"
+      - key: MAX_VIDEOS_PER_USER
+        value: "100"
+      - key: RATE_LIMIT_REQUESTS
+        value: "10"
+      - key: RATE_LIMIT_WINDOW
+        value: "60"
+      - key: CACHE_TTL
+        value: "3600"
+      - key: DEFAULT_TIMEZONE
+        value: "UTC"
+      - key: DISCORD_BOT_TOKEN
+        sync: false
+      - key: YOUTUBE_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+    autoDeploy: true
+    branch: main
+
+# Note: Using external database and Redis services
+# Configure DATABASE_URL and REDIS_URL manually in Render dashboard
+
+# =============================================================================
+# SECRETS (Configure these in Render Dashboard)
+# =============================================================================
+# The following secrets need to be configured in the Render dashboard:
+# 
+# 1. DISCORD_BOT_TOKEN: Your Discord bot token
+#    - Go to Discord Developer Portal → Your Application → Bot → Token
+# 
+# 2. YOUTUBE_API_KEY: Your YouTube Data API v3 key
+#    - Go to Google Cloud Console → APIs & Services → Credentials
+# 
+# 3. DATABASE_URL: PostgreSQL connection string
+#    - Use your existing Render database or external PostgreSQL service
+#    - Format: postgresql://user:password@host:port/database
+# 
+# 4. REDIS_URL: Redis connection string
+#    - Use your existing Render Redis or external Redis service
+#    - Format: redis://host:port/database
+#
+# =============================================================================
+# DEPLOYMENT INSTRUCTIONS
+# =============================================================================
+# 
+# 1. Push this code to GitHub
+# 2. Connect your GitHub repository to Render
+# 3. Create a new "Blueprint" deployment using this file
+# 4. Render will automatically deploy the background worker (bot)
+# 5. Configure secrets in Render dashboard
+# 6. Your bot will be ready to use!
+#
+# =============================================================================
+# COST ESTIMATE
+# =============================================================================
+# 
+# Monthly costs (Render):
+# - Background Worker (Bot): $7
+# - Database & Redis: Use existing services (Free)
+# 
+# Total: ~$7/month for basic bot functionality
+#
+# =============================================================================
+# FEATURES AVAILABLE
+# =============================================================================
+# 
+# ✅ All Discord commands work
+# ✅ Video tracking and management
+# ✅ User registration and roles
+# ✅ Manual video stats updates
+# ✅ Database operations
+# 
+# ❌ No automatic background tasks
+# ❌ No scheduled updates
+# ❌ No automatic video syncing

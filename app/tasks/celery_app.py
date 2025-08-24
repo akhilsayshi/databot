@@ -9,7 +9,7 @@ logger = get_logger(__name__)
 
 # Initialize Celery app
 celery_app = Celery(
-    "salmonbot",
+    "databot",
     broker=settings.redis_url,
     backend=settings.redis_url,
     include=[

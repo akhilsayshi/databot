@@ -98,6 +98,21 @@ def main():
     # Create necessary directories
     create_directories()
     
+    # Initialize database if needed
+    try:
+        print("🔄 Initializing database...")
+        from app.infrastructure.db import init_db, check_database_health
+        
+        if not check_database_health():
+            print("⚠️  Database not healthy, attempting initialization...")
+            init_db()
+            print("✅ Database initialized successfully")
+        else:
+            print("✅ Database is healthy")
+            
+    except Exception as e:
+        print(f"⚠️  Database initialization issue (continuing anyway): {e}")
+    
     print("\n🚀 Starting DataBot...")
     
     try:
