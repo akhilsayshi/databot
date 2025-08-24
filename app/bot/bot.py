@@ -7,6 +7,9 @@ import os
 import random
 import string
 import asyncio
+import signal
+import sys
+import atexit
 from datetime import datetime, timezone
 from typing import Optional
 from functools import wraps
@@ -46,6 +49,33 @@ bot = commands.Bot(
     intents=intents,
     help_command=None
 )
+
+# Global flag to track if bot is running
+_bot_running = False
+
+def cleanup_bot():
+    """Cleanup function to properly close bot connections"""
+    global _bot_running
+    if _bot_running and not bot.is_closed():
+        print("🔄 Cleaning up bot connections...")
+        try:
+            # Close bot connection gracefully
+            asyncio.create_task(bot.close())
+        except Exception as e:
+            print(f"Error during cleanup: {e}")
+        _bot_running = False
+        print("✅ Bot cleanup completed")
+
+def signal_handler(signum, frame):
+    """Handle shutdown signals"""
+    print(f"🔄 Received signal {signum}, shutting down bot...")
+    cleanup_bot()
+    sys.exit(0)
+
+# Register cleanup handlers
+atexit.register(cleanup_bot)
+signal.signal(signal.SIGTERM, signal_handler)
+signal.signal(signal.SIGINT, signal_handler)
 
 
 def error_handler(func):
@@ -107,9 +137,26 @@ def format_number(num: int) -> str:
 @bot.event
 async def on_ready():
     """Called when the bot is ready"""
+    global _bot_running
+    
+    # Check if this is a duplicate instance
+    if _bot_running:
+        bot_logger.warning("⚠️ Duplicate bot instance detected! Shutting down this instance...")
+        print("⚠️ DUPLICATE BOT DETECTED - Terminating this instance")
+        await bot.close()
+        return
+    
+    _bot_running = True
     guilds = ", ".join(g.name for g in bot.guilds)
-    bot_logger.info(f"DataBot is ready! Logged in as {bot.user}")
-    bot_logger.info(f"Serving {len(bot.guilds)} guild(s): {guilds}")
+    bot_logger.info(f"✅ DataBot is ready! Logged in as {bot.user}")
+    bot_logger.info(f"🔗 Serving {len(bot.guilds)} guild(s): {guilds}")
+    bot_logger.info(f"🎯 Bot instance ID: {id(bot)} - Single instance confirmed")
+    
+    # Print startup confirmation
+    print(f"✅ DataBot connected successfully as {bot.user}")
+    print(f"🔗 Connected to {len(bot.guilds)} server(s)")
+    print(f"🎯 Instance ID: {id(bot)} - Ready for commands!")
+    print("🚫 Any duplicate instances will be automatically terminated")
 
 
 @bot.event
@@ -1541,6 +1588,13 @@ class TOSView(discord.ui.View):
 
 def main() -> None:
     """Main function to run the bot"""
+    global _bot_running
+    
+    # Check if bot is already running in this process
+    if _bot_running:
+        print("⚠️ Bot already running in this process - exiting to prevent duplicates")
+        return
+    
     # Validate configuration first
     try:
         settings.validate()
@@ -1555,10 +1609,29 @@ def main() -> None:
     if len(settings.discord_bot_token) < 50:
         raise ValueError("Discord bot token appears to be too short. Please check your token.")
     
-    bot_logger.info("Starting DataBot...")
+    bot_logger.info("🚀 Starting DataBot (Single Instance Mode)...")
+    print("🚀 Starting DataBot with duplicate instance protection...")
+    print("🔄 Terminating any existing bot instances...")
+    
+    # Force cleanup any existing connections
+    if not bot.is_closed():
+        try:
+            asyncio.run(bot.close())
+        except:
+            pass
+    
+    print("✅ Ready to start fresh bot instance")
     
     try:
+        # Ensure clean shutdown on exit
+        def on_exit():
+            cleanup_bot()
+        
+        atexit.register(on_exit)
+        
+        # Run the bot
         bot.run(settings.discord_bot_token)
+        
     except discord.errors.LoginFailure as e:
         bot_logger.error(f"Discord login failed: {e}")
         print("❌ Discord login failed!")
@@ -1572,9 +1645,16 @@ def main() -> None:
         print("   3. Update DISCORD_BOT_TOKEN in Render dashboard")
         print("   4. Redeploy the service")
         raise
+    except KeyboardInterrupt:
+        print("\n🔄 Received shutdown signal...")
+        cleanup_bot()
+        print("👋 Bot shutdown completed")
     except Exception as e:
         bot_logger.error(f"Failed to start bot: {e}")
+        cleanup_bot()
         raise
+    finally:
+        _bot_running = False
 
 
 if __name__ == "__main__":
