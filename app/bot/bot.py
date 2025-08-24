@@ -10,9 +10,14 @@ import asyncio
 import signal
 import sys
 import atexit
+import warnings
 from datetime import datetime, timezone
 from typing import Optional
 from functools import wraps
+
+# Suppress aiohttp connector warnings
+warnings.filterwarnings("ignore", message="Unclosed connector")
+warnings.filterwarnings("ignore", message="Unclosed client session")
 
 # Import discord without voice support to avoid audioop dependency
 import discord
@@ -60,7 +65,20 @@ def cleanup_bot():
         print("🔄 Cleaning up bot connections...")
         try:
             # Close bot connection gracefully
-            asyncio.create_task(bot.close())
+            loop = None
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            
+            if loop.is_running():
+                # If event loop is running, schedule the close
+                asyncio.create_task(bot.close())
+            else:
+                # If event loop is not running, run the close synchronously
+                loop.run_until_complete(bot.close())
+                
         except Exception as e:
             print(f"Error during cleanup: {e}")
         _bot_running = False
@@ -157,6 +175,14 @@ async def on_ready():
     print(f"🔗 Connected to {len(bot.guilds)} server(s)")
     print(f"🎯 Instance ID: {id(bot)} - Ready for commands!")
     print("🚫 Any duplicate instances will be automatically terminated")
+
+
+@bot.event
+async def on_disconnect():
+    """Called when bot disconnects"""
+    global _bot_running
+    bot_logger.info("🔌 Bot disconnected from Discord")
+    _bot_running = False
 
 
 @bot.event
@@ -1611,15 +1637,6 @@ def main() -> None:
     
     bot_logger.info("🚀 Starting DataBot (Single Instance Mode)...")
     print("🚀 Starting DataBot with duplicate instance protection...")
-    print("🔄 Terminating any existing bot instances...")
-    
-    # Force cleanup any existing connections
-    if not bot.is_closed():
-        try:
-            asyncio.run(bot.close())
-        except:
-            pass
-    
     print("✅ Ready to start fresh bot instance")
     
     try:
