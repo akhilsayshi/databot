@@ -153,8 +153,7 @@ async def help_command(ctx: commands.Context):
         name="📋 Core Commands",
         value=(
             "`!help` - Show this help message\n"
-            "`!render` - Accept Terms of Service to get clipper role\n"
-            "`!register` - Register to get clipper role and access\n"
+            "`!register` - Accept Terms of Service to get clipper role\n"
             "`!verify <url>` - Verify your YouTube channel\n"
             "`!done` - Complete verification after adding code\n"
             "`!add <url>` - Add a video from your verified channel"
@@ -188,8 +187,7 @@ async def help_command(ctx: commands.Context):
     embed.add_field(
         name="💡 Tips",
         value=(
-            "• **Start with `!render` to accept Terms of Service and get access**\n"
-            "• Use `!register` to read the complete rules and guidelines\n"
+            "• **Start with `!register` to accept Terms of Service and get access**\n"
             "• Use `!verify <url> automatic` for auto-tracking all videos\n"
             "• Use `!verify <url> manual` for manual video tracking\n"
             "• Add the verification code to your channel description\n"
@@ -208,7 +206,7 @@ async def help_command(ctx: commands.Context):
 @bot.command(name="register")
 @error_handler
 async def register_command(ctx: commands.Context):
-    """Register to get clipper role and access to all commands"""
+    """Accept Terms of Service to get clipper role and access to all commands"""
     
     # Check if user already has clipper role
     clipper_role = discord.utils.get(ctx.guild.roles, name="clipper")
@@ -221,134 +219,35 @@ async def register_command(ctx: commands.Context):
         await ctx.send(embed=embed)
         return
     
-    # Create clipper role if it doesn't exist
-    if not clipper_role:
-        try:
-            clipper_role = await ctx.guild.create_role(
-                name="clipper",
-                color=discord.Color.blue(),
-                reason="DataBot registration role"
-            )
-            bot_logger.info(f"Created clipper role in guild {ctx.guild.name}")
-        except discord.Forbidden:
-            raise ValueError("Bot doesn't have permission to create roles. Please ask an admin to create a 'clipper' role.")
-    
-    # Assign role to user
-    try:
-        await ctx.author.add_roles(clipper_role)
-        bot_logger.info(f"Assigned clipper role to {ctx.author.display_name}")
-    except discord.Forbidden:
-        raise ValueError("Bot doesn't have permission to assign roles. Please ask an admin to assign the 'clipper' role manually.")
-    
-    # Create rules embed
+    # Create TOS embed
     embed = discord.Embed(
-        title="📜 Rules & Guidelines",
-        description="Welcome to the DataBot community! Please read and follow these rules:",
-        color=0x00ff00
-    )
-    
-    # General Rules
-    embed.add_field(
-        name="✅ General Rules",
-        value=(
-            "• **Be Kind & Respectful.**\n"
-            "• Follow Discord's Terms of Service at all times.\n"
-            "• **Artificial growth or view botting is strictly forbidden.**\n"
-            "• We have systems in place to detect this.\n"
-            "• **Zero tolerance policy → permanent ban without warning.**"
+        title="📜 Terms of Service",
+        description=(
+            "**Welcome to DataBot!** 🎉\n\n"
+            "Before you can use DataBot commands, you must accept our Terms of Service.\n\n"
+            "**By accepting, you agree to:**\n"
+            "• Follow Discord's Terms of Service\n"
+            "• Be kind and respectful to other users\n"
+            "• Not use artificial growth or view botting\n"
+            "• Only upload appropriate content\n"
+            "• Respect content creators' rights\n"
+            "• Follow upload frequency guidelines\n\n"
+            "**Click the button below to accept the Terms of Service and receive the clipper role.**"
         ),
-        inline=False
-    )
-    
-    # Uploading Content
-    embed.add_field(
-        name="📹 Uploading Content",
-        value=(
-            "• You may share raw clips (unedited footage directly from streams/videos).\n"
-            "• You may share your own edits of clips.\n"
-            "• ❌ **Do NOT re-upload another editor's finished edit.**\n"
-            "• Example: Adding gameplay footage next to someone else's edit does not make it your own.\n"
-            "• You may look at other editors' styles for inspiration, but always make your own version."
-        ),
-        inline=False
-    )
-    
-    # Multiple Channels
-    embed.add_field(
-        name="🔗 Multiple Channels",
-        value=(
-            "• You can link as many YouTube channels as you want to your Discord account.\n"
-            "• Example: Two Shorts channels and one main channel can all be connected."
-        ),
-        inline=False
-    )
-    
-    # Upload Frequency
-    embed.add_field(
-        name="⏳ Upload Frequency",
-        value=(
-            "• Frequent uploading is encouraged!\n"
-            "• 🚫 Spam uploading is not allowed.\n"
-            "• **Upload limit: 350 videos per month.**\n"
-            "• Uploading beyond this limit may result in removal from the system."
-        ),
-        inline=False
-    )
-    
-    # Tracking Views
-    embed.add_field(
-        name="📊 Tracking Views",
-        value="Use the `!info` command to see how many views your videos have across your channels.",
-        inline=False
-    )
-    
-    # Content Restrictions
-    embed.add_field(
-        name="🚫 Content Restrictions",
-        value=(
-            "• Only upload clips where the content creator is actively part of the video.\n"
-            "• **Do not post:**\n"
-            "  - Clips made to defame someone.\n"
-            "  - Content taken out of context with intent to mislead.\n"
-            "  - Disturbing, pornographic, or otherwise TOS-breaking content.\n"
-            "• Keep everything safe and appropriate for YouTube."
-        ),
-        inline=False
-    )
-    
-    # Reusing & Editing Content
-    embed.add_field(
-        name="🔄 Reusing & Editing Content",
-        value=(
-            "• You can take raw clips and make your own edits.\n"
-            "• ❌ **Do not re-upload another creator's final edits** (with subtitles, cuts, effects, etc.).\n"
-            "• ❌ **Do not re-upload a creator's official shorts** without making significant, original changes.\n"
-            "• Small tweaks (like just adding gameplay footage) do not count."
-        ),
-        inline=False
-    )
-    
-    # Upload Timing
-    embed.add_field(
-        name="📅 Upload Timing",
-        value=(
-            "• You can only add videos that were posted within the same calendar month (e.g., Jan 1–31, then Feb 1 starts a new month).\n"
-            "• Views are counted in 2-month cycles, so posting right before a cycle ends is not recommended."
-        ),
-        inline=False
+        color=0x0099ff
     )
     
     embed.add_field(
-        name="🎉 Welcome!",
-        value=(
-            "**You now have the clipper role and can use all DataBot commands!**\n\n"
-            "Start by using `!verify <channel_url>` to add your YouTube channel."
-        ),
+        name="📋 Full Rules",
+        value="After accepting, you'll receive the complete rules and guidelines.",
         inline=False
     )
     
-    embed.set_footer(text="DataBot - Follow the rules and happy clipping!")
-    await ctx.send(embed=embed)
+    embed.set_footer(text="DataBot - Terms of Service • You have 5 minutes to respond")
+    
+    # Create and send the view with buttons
+    view = TOSView(ctx.author.id)
+    await ctx.send(embed=embed, view=view)
 
 
 @bot.command(name="verify")
@@ -1548,7 +1447,6 @@ class TOSView(discord.ui.View):
                     "**Welcome to DataBot!** 🎉\n\n"
                     "You have successfully accepted the Terms of Service and received the **clipper** role.\n\n"
                     "**You can now use all DataBot commands:**\n"
-                    "• `!register` - Read the full rules and guidelines\n"
                     "• `!verify <channel_url>` - Add your YouTube channel\n"
                     "• `!add <video_url>` - Track a video\n"
                     "• `!videos` - View your tracked videos\n"
@@ -1557,6 +1455,32 @@ class TOSView(discord.ui.View):
                     "**Happy clipping!** ✂️"
                 ),
                 color=0x00ff00
+            )
+            
+            # Add full rules after acceptance
+            embed.add_field(
+                name="📜 Rules & Guidelines",
+                value=(
+                    "**Please read and follow these rules:**\n\n"
+                    "**✅ General Rules:**\n"
+                    "• Be Kind & Respectful\n"
+                    "• Follow Discord's Terms of Service\n"
+                    "• Artificial growth or view botting is strictly forbidden\n"
+                    "• Zero tolerance policy → permanent ban\n\n"
+                    "**📹 Uploading Content:**\n"
+                    "• Share raw clips and your own edits\n"
+                    "• ❌ Do NOT re-upload another editor's finished edit\n"
+                    "• Make your own version, don't copy\n\n"
+                    "**🚫 Content Restrictions:**\n"
+                    "• Only appropriate content\n"
+                    "• No defamatory or misleading content\n"
+                    "• Keep everything safe for YouTube\n\n"
+                    "**⏳ Upload Limits:**\n"
+                    "• 350 videos per month maximum\n"
+                    "• No spam uploading\n"
+                    "• Respect upload timing guidelines"
+                ),
+                inline=False
             )
             
             await interaction.response.send_message(embed=embed, ephemeral=False)
@@ -1579,7 +1503,7 @@ class TOSView(discord.ui.View):
             description=(
                 "You have declined the Terms of Service.\n\n"
                 "**You cannot use DataBot commands without accepting the TOS.**\n\n"
-                "If you change your mind, you can run `!render` again to accept the terms."
+                "If you change your mind, you can run `!register` again to accept the terms."
             ),
             color=0xff0000
         )
@@ -1587,51 +1511,7 @@ class TOSView(discord.ui.View):
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-@bot.command(name="render")
-@error_handler
-async def render_command(ctx: commands.Context):
-    """Accept Terms of Service to get clipper role and access to all commands"""
-    
-    # Check if user already has clipper role
-    clipper_role = discord.utils.get(ctx.guild.roles, name="clipper")
-    if clipper_role and clipper_role in ctx.author.roles:
-        embed = discord.Embed(
-            title="✅ Already Registered",
-            description="You already have the clipper role and can use all commands!",
-            color=0x00ff00
-        )
-        await ctx.send(embed=embed)
-        return
-    
-    # Create TOS embed
-    embed = discord.Embed(
-        title="📜 Terms of Service",
-        description=(
-            "**Welcome to DataBot!** 🎉\n\n"
-            "Before you can use DataBot commands, you must accept our Terms of Service.\n\n"
-            "**By accepting, you agree to:**\n"
-            "• Follow Discord's Terms of Service\n"
-            "• Be kind and respectful to other users\n"
-            "• Not use artificial growth or view botting\n"
-            "• Only upload appropriate content\n"
-            "• Respect content creators' rights\n"
-            "• Follow upload frequency guidelines\n\n"
-            "**Click the button below to accept the Terms of Service and receive the clipper role.**"
-        ),
-        color=0x0099ff
-    )
-    
-    embed.add_field(
-        name="📋 Full Rules",
-        value="Use `!register` after accepting to read the complete rules and guidelines.",
-        inline=False
-    )
-    
-    embed.set_footer(text="DataBot - Terms of Service • You have 5 minutes to respond")
-    
-    # Create and send the view with buttons
-    view = TOSView(ctx.author.id)
-    await ctx.send(embed=embed, view=view)
+
 
 
 def main() -> None:
