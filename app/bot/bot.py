@@ -970,13 +970,6 @@ async def stats_command(ctx: commands.Context):
             inline=True
         )
         
-        if update_errors > 0:
-            embed.add_field(
-                name="⚠️ Errors",
-                value=f"{update_errors} videos couldn't be updated",
-                inline=True
-            )
-        
         # Add automatic syncing info
         embed.add_field(
             name="🔄 Auto Sync",
