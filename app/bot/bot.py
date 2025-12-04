@@ -28,7 +28,7 @@ from sqlalchemy import func
 from app.services.youtube import fetch_video_stats, fetch_channel_info
 from app.services.quota_manager import quota_manager
 from app.tasks.refresh_stats import refresh_video_stats
-from app.tasks.automatic_tracking import sync_new_videos_for_user
+from app.tasks.automatic_tracking import sync_new_videos_from_channels
 from app.utils.logger import bot_logger
 from app.config import settings
 
@@ -856,7 +856,7 @@ async def stats_command(ctx: commands.Context):
         # Trigger background tasks for automatic syncing
         try:
             # Sync new videos from automatic channels
-            sync_task = sync_new_videos_for_user.delay(user.id)
+            sync_task = sync_new_videos_from_channels.delay()
             
             # Refresh stats for all videos
             refresh_task = refresh_video_stats.delay()
