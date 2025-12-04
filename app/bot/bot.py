@@ -36,24 +36,28 @@ _bot_running = False
 # Place all slash command definitions below bot initialization
 
 # Slash command: /help with autocomplete dropdown
+async def help_autocomplete(interaction: discord.Interaction, current: str):
+    choices = [
+        app_commands.Choice(name="register", value="register"),
+        app_commands.Choice(name="verify", value="verify"),
+        app_commands.Choice(name="done", value="done"),
+        app_commands.Choice(name="add", value="add"),
+        app_commands.Choice(name="stats", value="stats"),
+        app_commands.Choice(name="report", value="report"),
+        app_commands.Choice(name="monthly", value="monthly"),
+        app_commands.Choice(name="quota", value="quota"),
+        app_commands.Choice(name="fix_monthly", value="fix_monthly"),
+        app_commands.Choice(name="channels", value="channels"),
+        app_commands.Choice(name="videos", value="videos"),
+        app_commands.Choice(name="remove", value="remove"),
+        app_commands.Choice(name="reset_monthly", value="reset_monthly"),
+        app_commands.Choice(name="payment", value="payment"),
+    ]
+    return [c for c in choices if current.lower() in c.name]
+
 @bot.tree.command(name="help", description="Show help for all available commands.")
 @app_commands.describe(command="Select a command to get help")
-@app_commands.autocomplete(command=lambda interaction, current: [
-    app_commands.Choice(name="register", value="register"),
-    app_commands.Choice(name="verify", value="verify"),
-    app_commands.Choice(name="done", value="done"),
-    app_commands.Choice(name="add", value="add"),
-    app_commands.Choice(name="stats", value="stats"),
-    app_commands.Choice(name="report", value="report"),
-    app_commands.Choice(name="monthly", value="monthly"),
-    app_commands.Choice(name="quota", value="quota"),
-    app_commands.Choice(name="fix_monthly", value="fix_monthly"),
-    app_commands.Choice(name="channels", value="channels"),
-    app_commands.Choice(name="videos", value="videos"),
-    app_commands.Choice(name="remove", value="remove"),
-    app_commands.Choice(name="reset_monthly", value="reset_monthly"),
-    app_commands.Choice(name="payment", value="payment"),
-])
+@app_commands.autocomplete(command=help_autocomplete)
 async def help_command(interaction: discord.Interaction, command: str = None):
     """Show help for all available commands, with dropdown autocomplete."""
     command_descriptions = {
