@@ -27,7 +27,7 @@ from sqlalchemy.orm import joinedload
 from sqlalchemy import func
 from app.services.youtube import fetch_video_stats, fetch_channel_info
 from app.services.quota_manager import quota_manager
-from app.tasks.refresh_stats import refresh_user_video_stats
+from app.tasks.refresh_stats import refresh_video_stats
 from app.tasks.automatic_tracking import sync_new_videos_for_user
 from app.utils.logger import bot_logger
 from app.config import settings
@@ -859,7 +859,7 @@ async def stats_command(ctx: commands.Context):
             sync_task = sync_new_videos_for_user.delay(user.id)
             
             # Refresh stats for all videos
-            refresh_task = refresh_user_video_stats.delay(user.id)
+            refresh_task = refresh_video_stats.delay()
             
             bot_logger.info(f"Triggered background tasks for user {user.discord_username}: sync={sync_task.id}, refresh={refresh_task.id}")
         except Exception as e:
