@@ -38,7 +38,7 @@ def format_number(num: int) -> str:
         return str(num)
 
 @bot.event
-def on_ready():
+async def on_ready():
     print(f"Bot is ready as {bot.user}")
 
 @bot.tree.command(name="help", description="Show help for all available commands.")
