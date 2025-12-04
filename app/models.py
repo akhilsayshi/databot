@@ -26,6 +26,8 @@ class User(Base):
     discord_user_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     discord_username: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    paypal_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    cashapp_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
 
     channels: Mapped[list[Channel]] = relationship("Channel", back_populates="user", cascade="all, delete-orphan")
     videos: Mapped[list[Video]] = relationship("Video", back_populates="user", cascade="all, delete-orphan")

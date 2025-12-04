@@ -4,60 +4,95 @@ MVP focused on YouTube-only functionality.
 """
 
 import os
-import random
-import string
-import asyncio
-import signal
-import sys
-import atexit
-import warnings
-from datetime import datetime, timezone
-from typing import Optional
-from functools import wraps
 
-# Suppress aiohttp connector warnings
-warnings.filterwarnings("ignore", message="Unclosed connector")
-warnings.filterwarnings("ignore", message="Unclosed client session")
-
-# Import discord without voice support to avoid audioop dependency
-import discord
-from discord.ext import commands
-
-# Disable voice support to avoid audioop import
-discord.VoiceClient = None
-
-from sqlalchemy import select, and_, func
-from sqlalchemy.orm import joinedload
-from sqlalchemy.exc import SQLAlchemyError
-
-from app.config import settings
-from app.infrastructure.db import session_scope
-from app.models import User, Channel, Video, MonthlyView
-from app.services.youtube import (
-    parse_video_id, parse_channel_id, get_channel_id_from_username,
-    fetch_video_stats, fetch_channel_info, fetch_channel_videos,
-    check_verification, is_valid_youtube_url, is_video_url, is_channel_url,
-    fetch_channel_info_async, get_channel_id_from_username_async,
-    get_video_channel_id
-)
-from app.services.quota_manager import quota_manager
-from app.tasks.monthly_reports import refresh_user_video_stats, sync_new_videos_for_user
-from app.utils.logger import bot_logger
-
-
-# Bot configuration
-intents = discord.Intents.default()
-intents.message_content = True
-intents.members = True
-
-bot = commands.Bot(
-    command_prefix="!",
-    intents=intents,
-    help_command=None
-)
+# Slash command: /help with autocomplete dropdown
+@bot.tree.command(name="help", description="Show help for all available commands.")
+@app_commands.describe(command="Select a command to get help")
+@app_commands.autocomplete(command=lambda interaction, current: [
+    app_commands.Choice(name="register", value="register"),
+    app_commands.Choice(name="verify", value="verify"),
+    app_commands.Choice(name="done", value="done"),
+    app_commands.Choice(name="add", value="add"),
+    app_commands.Choice(name="stats", value="stats"),
+    app_commands.Choice(name="report", value="report"),
+    app_commands.Choice(name="monthly", value="monthly"),
+    app_commands.Choice(name="quota", value="quota"),
+    app_commands.Choice(name="fix_monthly", value="fix_monthly"),
+    app_commands.Choice(name="channels", value="channels"),
+    app_commands.Choice(name="videos", value="videos"),
+    app_commands.Choice(name="remove", value="remove"),
+    app_commands.Choice(name="reset_monthly", value="reset_monthly"),
+    app_commands.Choice(name="payment", value="payment"),
+])
+async def help_command(interaction: discord.Interaction, command: str = None):
+    """Show help for all available commands, with dropdown autocomplete."""
+    command_descriptions = {
+        "register": "Accept Terms of Service to get clipper role and access to all commands.",
+        "verify": "Verify your YouTube channel ownership for tracking.",
+        "done": "Complete verification after adding code to channel description.",
+        "add": "Add a YouTube video to track views manually.",
+        "stats": "Show your current stats for tracked videos with automatic syncing.",
+        "report": "Show monthly aggregated view report with real-time updates.",
+        "monthly": "Show monthly summary with automatic tracking info.",
+        "quota": "Show YouTube API quota usage status.",
+        "fix_monthly": "Fix monthly view counts by resetting them to track only incremental views from now on.",
+        "channels": "List your verified channels.",
+        "videos": "List all your tracked videos.",
+        "remove": "Remove a video from tracking.",
+        "reset_monthly": "Reset monthly view tracking to start fresh (Admin only).",
+        "payment": "Store your PayPal or CashApp username/ID for payouts.",
+    }
+    embed = discord.Embed(
+        title="🤖 DataBot Commands",
+        color=0x00ff00
+    )
+    if command and command in command_descriptions:
+        embed.description = f"**/{command}**: {command_descriptions[command]}"
+    else:
+        embed.description = "Select a command from the dropdown to see its description."
+        for cmd, desc in command_descriptions.items():
+            embed.add_field(name=f"/{cmd}", value=desc, inline=False)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+    bot_logger.info(f"✅ DataBot is ready! Logged in as {bot.user}")
+    bot_logger.info(f"🔗 Serving {len(bot.guilds)} guild(s): {guilds}")
+    bot_logger.info(f"🎯 Bot instance ID: {id(bot)} - Single instance confirmed")
+    print(f"✅ DataBot connected successfully as {bot.user}")
+    print(f"🔗 Connected to {len(bot.guilds)} server(s)")
+    print(f"🎯 Instance ID: {id(bot)} - Ready for commands!")
+    print("🚫 Any duplicate instances will be automatically terminated")
+    # Sync slash commands
+    try:
+        await bot.tree.sync()
+        print("✅ Slash commands synced!")
+    except Exception as e:
+        print(f"Error syncing slash commands: {e}")
 
 # Global flag to track if bot is running
 _bot_running = False
+
+# Payment command to store PayPal/CashApp info
+
+# Slash command: /payment
+@bot.tree.command(name="payment", description="Store your PayPal or CashApp username/ID for payouts.")
+@app_commands.describe(method="Payment method (paypal or cashapp)", username_or_id="Your PayPal or CashApp username/ID")
+async def payment_command(interaction: discord.Interaction, method: str, username_or_id: str):
+    method = method.lower()
+    if method not in ["paypal", "cashapp"]:
+        await interaction.response.send_message("Please specify either 'paypal' or 'cashapp' as the payment method.", ephemeral=True)
+        return
+    with session_scope() as session:
+        user = session.execute(
+            select(User).where(User.discord_user_id == str(interaction.user.id))
+        ).scalar_one_or_none()
+        if not user:
+            await interaction.response.send_message("You must be registered to set payment info. Use /register first.", ephemeral=True)
+            return
+        if method == "paypal":
+            user.paypal_id = username_or_id
+        else:
+            user.cashapp_id = username_or_id
+        session.commit()
+        await interaction.response.send_message(f"Your {method.title()} info has been saved!", ephemeral=True)
 
 def cleanup_bot():
     """Cleanup function to properly close bot connections"""
