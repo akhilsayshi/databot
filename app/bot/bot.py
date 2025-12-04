@@ -3,7 +3,16 @@ YouTubeBot - Discord bot for tracking YouTube video views.
 MVP focused on YouTube-only functionality.
 """
 
+
 import os
+# ...existing imports...
+
+# Global flag to track if bot is running
+_bot_running = False
+
+# ...existing code...
+
+# Place all slash command definitions below bot initialization
 
 # Slash command: /help with autocomplete dropdown
 @bot.tree.command(name="help", description="Show help for all available commands.")
@@ -53,24 +62,6 @@ async def help_command(interaction: discord.Interaction, command: str = None):
         for cmd, desc in command_descriptions.items():
             embed.add_field(name=f"/{cmd}", value=desc, inline=False)
     await interaction.response.send_message(embed=embed, ephemeral=True)
-    bot_logger.info(f"✅ DataBot is ready! Logged in as {bot.user}")
-    bot_logger.info(f"🔗 Serving {len(bot.guilds)} guild(s): {guilds}")
-    bot_logger.info(f"🎯 Bot instance ID: {id(bot)} - Single instance confirmed")
-    print(f"✅ DataBot connected successfully as {bot.user}")
-    print(f"🔗 Connected to {len(bot.guilds)} server(s)")
-    print(f"🎯 Instance ID: {id(bot)} - Ready for commands!")
-    print("🚫 Any duplicate instances will be automatically terminated")
-    # Sync slash commands
-    try:
-        await bot.tree.sync()
-        print("✅ Slash commands synced!")
-    except Exception as e:
-        print(f"Error syncing slash commands: {e}")
-
-# Global flag to track if bot is running
-_bot_running = False
-
-# Payment command to store PayPal/CashApp info
 
 # Slash command: /payment
 @bot.tree.command(name="payment", description="Store your PayPal or CashApp username/ID for payouts.")
