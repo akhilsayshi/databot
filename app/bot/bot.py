@@ -331,4 +331,10 @@ class TOSView(discord.ui.View):
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
+def main():
+    bot.run(settings.discord_bot_token)
+
+if __name__ == "__main__":
+    main()
+
 
