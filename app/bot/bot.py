@@ -226,24 +226,27 @@ def format_number(num: int) -> str:
 async def on_ready():
     """Called when the bot is ready"""
     global _bot_running
-    
+
     # Check if this is a duplicate instance
     if _bot_running:
         bot_logger.warning("⚠️ Duplicate bot instance detected! Shutting down this instance...")
         print("⚠️ DUPLICATE BOT DETECTED - Terminating this instance")
         await bot.close()
         return
-    
+
     _bot_running = True
     guilds = ", ".join(g.name for g in bot.guilds)
     bot_logger.info(f"✅ DataBot is ready! Logged in as {bot.user}")
     bot_logger.info(f"🔗 Serving {len(bot.guilds)} guild(s): {guilds}")
     bot_logger.info(f"🎯 Bot instance ID: {id(bot)} - Single instance confirmed")
-    
-    # Print startup confirmation
+
+    # Sync slash commands with Discord
+    synced = await bot.tree.sync()
+    bot_logger.info(f"🔄 Synced {len(synced)} slash commands with Discord")
     print(f"✅ DataBot connected successfully as {bot.user}")
     print(f"🔗 Connected to {len(bot.guilds)} server(s)")
     print(f"🎯 Instance ID: {id(bot)} - Ready for commands!")
+    print(f"🔄 Synced {len(synced)} slash commands with Discord")
     print("🚫 Any duplicate instances will be automatically terminated")
 
 
