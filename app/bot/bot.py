@@ -1,3 +1,156 @@
+# Register all required slash commands
+@bot.tree.command(name="videos", description="List all your tracked videos.")
+async def videos_command(interaction: discord.Interaction):
+    """List all your tracked videos."""
+    with session_scope() as session:
+        user = session.execute(
+            select(User).where(User.discord_user_id == str(interaction.user.id))
+        ).scalar_one_or_none()
+        if user is None:
+            await interaction.response.send_message("No videos found. Use /add to add your first video.", ephemeral=True)
+            return
+        videos = session.execute(
+            select(Video).where(Video.user_id == user.id).order_by(Video.created_at.desc())
+        ).scalars().all()
+        if not videos:
+            await interaction.response.send_message("No videos found. Use /add to add your first video.", ephemeral=True)
+            return
+        embed = discord.Embed(
+            title="📺 Your Videos",
+            description=f"{len(videos)} video(s):",
+            color=0x00ff00
+        )
+        top_videos = sorted(videos, key=lambda x: x.last_view_count, reverse=True)[:5]
+        video_text = []
+        for i, video in enumerate(top_videos, 1):
+            title = video.title or f"Video {video.video_id}"
+            video_text.append(f"{i}. {title} - {format_number(video.last_view_count)}")
+        embed.add_field(name="Top Videos", value="\n".join(video_text), inline=False)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="stats", description="Show your current stats for tracked videos with automatic syncing.")
+async def stats_command(interaction: discord.Interaction):
+    """Show your current stats for tracked videos with automatic syncing."""
+    processing_embed = discord.Embed(
+        title="🔄 Fetching Live Stats & Syncing Videos",
+        description="Getting updated view counts and syncing new videos...",
+        color=0xffff00
+    )
+    await interaction.response.send_message(embed=processing_embed, ephemeral=True)
+    with session_scope() as session:
+        user = session.execute(
+            select(User).where(User.discord_user_id == str(interaction.user.id))
+        ).scalar_one_or_none()
+        if user is None:
+            await interaction.followup.send("No videos tracked yet. Use /add to add your first video.", ephemeral=True)
+            return
+        videos = session.execute(
+            select(Video).where(Video.user_id == user.id)
+        ).scalars().all()
+        if not videos:
+            await interaction.followup.send("No videos tracked yet. Use /add to add your first video.", ephemeral=True)
+            return
+        monthly_views_total = 0
+        total_likes = 0
+        updated_videos = []
+        now = datetime.now(timezone.utc)
+        for video in videos:
+            current_stats = fetch_video_stats(video.video_id)
+            if current_stats:
+                monthly_view = session.execute(
+                    select(MonthlyView).where(
+                        and_(
+                            MonthlyView.user_id == user.id,
+                            MonthlyView.video_id == video.id,
+                            MonthlyView.year == now.year,
+                            MonthlyView.month == now.month
+                        )
+                    )
+                ).scalar_one_or_none()
+                monthly_views = monthly_view.views if monthly_view else 0
+                monthly_views_total += monthly_views
+                total_likes += getattr(current_stats, 'like_count', 0)
+                updated_videos.append((video, monthly_views))
+        embed = discord.Embed(
+            title="📊 Monthly Views Updated",
+            description=f"**{now.strftime('%B %Y')}** - {format_number(monthly_views_total)} monthly views ({len(updated_videos)} videos)",
+            color=0x00ff00
+        )
+        embed.add_field(
+            name="📈 Summary",
+            value=f"Monthly Views: {format_number(monthly_views_total)}\nTotal Likes: {format_number(total_likes)}\nVideos: {len(updated_videos)}",
+            inline=True
+        )
+        if updated_videos:
+            top_videos = sorted(updated_videos, key=lambda x: x[1], reverse=True)[:5]
+            top_videos_text = [f"{i+1}. {v.title or v.video_id} - {format_number(mv)} monthly views" for i, (v, mv) in enumerate(top_videos)]
+            embed.add_field(
+                name="🏆 Top Videos",
+                value="\n".join(top_videos_text),
+                inline=False
+            )
+        embed.set_footer(text=f"Last updated: {now.strftime('%Y-%m-%d %H:%M:%S')} UTC | Auto-sync enabled")
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="report", description="Generate live monthly report.")
+async def report_command(interaction: discord.Interaction, month: int = None, year: int = None):
+    """Generate live monthly report."""
+    now = datetime.now(timezone.utc)
+    month = month or now.month
+    year = year or now.year
+    if not (1 <= month <= 12):
+        await interaction.response.send_message("Month must be between 1 and 12", ephemeral=True)
+        return
+    if not (2020 <= year <= 2030):
+        await interaction.response.send_message("Year must be between 2020 and 2030", ephemeral=True)
+        return
+    with session_scope() as session:
+        user = session.execute(
+            select(User).where(User.discord_user_id == str(interaction.user.id))
+        ).scalar_one_or_none()
+        if user is None:
+            await interaction.response.send_message("No data found. Use /add to add videos first", ephemeral=True)
+            return
+        videos = session.execute(
+            select(Video).where(Video.user_id == user.id)
+        ).scalars().all()
+        if not videos:
+            await interaction.response.send_message("No data found. Use /add to add videos first", ephemeral=True)
+            return
+        monthly_views = session.execute(
+            select(MonthlyView).where(
+                and_(
+                    MonthlyView.user_id == user.id,
+                    MonthlyView.year == year,
+                    MonthlyView.month == month
+                )
+            ).options(joinedload(MonthlyView.video))
+        ).scalars().all()
+        monthly_views_total = sum(mv.views for mv in monthly_views)
+        total_videos = len(monthly_views)
+        total_changes = sum(getattr(mv, 'views_change', 0) for mv in monthly_views)
+        embed = discord.Embed(
+            title="📊 Monthly Report",
+            description=f"{datetime(year, month, 1).strftime('%B %Y')} - {format_number(monthly_views_total)} monthly views ({total_videos} videos)",
+            color=0x00ff00
+        )
+        embed.add_field(
+            name="📈 Summary",
+            value=f"Monthly Views: {format_number(monthly_views_total)}\nVideos: {total_videos}\nChanges: {format_number(total_changes)}",
+            inline=True
+        )
+        if monthly_views:
+            top_videos = sorted(monthly_views, key=lambda x: x.views, reverse=True)[:5]
+            top_videos_text = [f"{i+1}. {mv.video.title or mv.video.video_id} - {format_number(mv.views)} monthly views" for i, mv in enumerate(top_videos)]
+            embed.add_field(
+                name="🏆 Top Videos",
+                value="\n".join(top_videos_text),
+                inline=False
+            )
+        embed.set_footer(text=f"Last updated: {now.strftime('%Y-%m-%d %H:%M:%S')} UTC")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
 """
 YouTubeBot - Discord bot for tracking YouTube video views.
 MVP focused on YouTube-only functionality.
@@ -234,64 +387,104 @@ async def on_ready():
         await bot.close()
         return
 
-    _bot_running = True
-    guilds = ", ".join(g.name for g in bot.guilds)
-    bot_logger.info(f"✅ DataBot is ready! Logged in as {bot.user}")
-    bot_logger.info(f"🔗 Serving {len(bot.guilds)} guild(s): {guilds}")
-    bot_logger.info(f"🎯 Bot instance ID: {id(bot)} - Single instance confirmed")
 
-    # Sync slash commands with Discord
-    synced = await bot.tree.sync()
-    bot_logger.info(f"🔄 Synced {len(synced)} slash commands with Discord")
-    print(f"✅ DataBot connected successfully as {bot.user}")
-    print(f"🔗 Connected to {len(bot.guilds)} server(s)")
-    print(f"🎯 Instance ID: {id(bot)} - Ready for commands!")
-    print(f"🔄 Synced {len(synced)} slash commands with Discord")
-    print("🚫 Any duplicate instances will be automatically terminated")
-
-
-@bot.event
-async def on_disconnect():
-    """Called when bot disconnects"""
-    global _bot_running
-    bot_logger.info("🔌 Bot disconnected from Discord")
-    _bot_running = False
-
-
-@bot.event
-async def on_command_error(ctx: commands.Context, error: commands.CommandError):
-    """Global error handler"""
-    if isinstance(error, commands.CommandNotFound):
+    @bot.tree.command(name="help", description="Show help for all available commands.")
+    async def help_command(interaction: discord.Interaction):
+        """Show help for all available commands"""
         embed = discord.Embed(
-            title="❌ Command Not Found",
-            description=f"Unknown command: `{ctx.message.content.split()[0]}`\n\nUse `!help` to see available commands.",
-            color=0xff0000
+            title="🤖 DataBot Commands",
+            description="Here are all available commands:",
+            color=0x00ff00
         )
-        await ctx.send(embed=embed)
-    elif isinstance(error, commands.MissingRequiredArgument):
-        embed = discord.Embed(
-            title="❌ Missing Argument",
-            description=f"Missing required argument: `{error.param.name}`",
-            color=0xff0000
+        # Core commands
+        embed.add_field(
+            name="📋 Core Commands",
+            value=(
+                "`/help` - Show this help message\n"
+                "`/register` - Accept Terms of Service to get clipper role\n"
+                "`/verify <url>` - Verify your YouTube channel\n"
+                "`/done` - Complete verification after adding code\n"
+                "`/add <url>` - Add a video from your verified channel"
+            ),
+            inline=False
         )
-        await ctx.send(embed=embed)
-    else:
-        embed = discord.Embed(
-            title="❌ Command Error",
-            description="An error occurred while processing your command.",
-            color=0xff0000
+        # Stats commands
+        embed.add_field(
+            name="📊 Stats Commands",
+            value=(
+                "`/stats` - Show live stats & auto-sync videos\n"
+                "`/report [month] [year]` - Generate live monthly report\n"
+                "`/monthly` - Show monthly summary\n"
+                "`/channels` - List your channels\n"
+                "`/videos` - List tracked videos"
+            ),
+            inline=False
         )
-        await ctx.send(embed=embed)
+        # Management commands
+        embed.add_field(
+            name="⚙️ Management",
+            value=(
+                "`/remove <video_id>` - Remove video from tracking"
+            ),
+            inline=False
+        )
+        embed.add_field(
+            name="💡 Tips",
+            value=(
+                "• **Start with `/register` to accept Terms of Service and get access**\n"
+                "• Use `/verify <url> automatic` for auto-tracking all videos\n"
+                "• Use `/verify <url> manual` for manual video tracking\n"
+                "• Add the verification code to your channel description\n"
+                "• **Wait 5 minutes** before running `/done`\n"
+                "• Use `/report [month] [year]` for historical data\n"
+                "• Example: `/report 12 2024` for December 2024"
+            ),
+            inline=False
+        )
+        embed.set_footer(text="DataBot - Track your YouTube growth!")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
-
-
-
-@bot.command(name="register")
-@error_handler
-async def register_command(ctx: commands.Context):
+@bot.tree.command(name="register", description="Accept Terms of Service to get clipper role and access to all commands.")
+async def register_command(interaction: discord.Interaction):
     """Accept Terms of Service to get clipper role and access to all commands"""
-    
     # Check if user already has clipper role
+    clipper_role = discord.utils.get(interaction.guild.roles, name="clipper")
+    if clipper_role and clipper_role in interaction.user.roles:
+        embed = discord.Embed(
+            title="✅ Already Registered",
+            description="You already have the clipper role and can use all commands!",
+            color=0x00ff00
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+
+    # Create TOS embed
+    embed = discord.Embed(
+        title="📜 Filian Clipping Community - Terms of Service",
+        description=(
+            "**Welcome to the Filian Clipping Community!** 🎉\n\n"
+            "Before you can use DataBot commands, you must accept our Terms of Service.\n\n"
+            "**By accepting, you agree to:**\n"
+            "• Be Kind & Respectful, Obey Discord's TOS\n"
+            "• **ZERO TOLERANCE** for view botting/artificial growth (permaban)\n"
+            "• Only upload appropriate Filian content\n"
+            "• No stealing other clippers' edits\n"
+            "• Follow 350 videos/month limit\n"
+            "• Only track monthly views (not total views)\n"
+            "• Views count in 2-month cycles\n\n"
+            "**Click the button below to accept and become a clipper!**"
+        ),
+        color=0x0099ff
+    )
+    embed.add_field(
+        name="📋 Full Rules",
+        value="After accepting, you'll receive the complete rules and guidelines.",
+        inline=False
+    )
+    embed.set_footer(text="DataBot - Terms of Service • You have 5 minutes to respond")
+    # Create and send the view with buttons
+    view = TOSView(interaction.user.id)
+    await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
     clipper_role = discord.utils.get(ctx.guild.roles, name="clipper")
     if clipper_role and clipper_role in ctx.author.roles:
         embed = discord.Embed(
@@ -334,60 +527,55 @@ async def register_command(ctx: commands.Context):
     await ctx.send(embed=embed, view=view)
 
 
-@bot.command(name="verify")
-@error_handler
-@require_clipper_role()
-async def verify_command(ctx: commands.Context, url: str, mode: str = "manual"):
+
+@bot.tree.command(name="verify", description="Verify your YouTube channel ownership for tracking.")
+async def verify_command(interaction: discord.Interaction, url: str, mode: str = "manual"):
     """Verify your YouTube channel ownership for tracking"""
-    
     if not is_valid_youtube_url(url):
-        raise ValueError("Invalid YouTube URL")
-    
+        await interaction.response.send_message("Invalid YouTube URL", ephemeral=True)
+        return
     if not is_channel_url(url):
-        raise ValueError("Please provide a channel URL, not a video URL")
-    
+        await interaction.response.send_message("Please provide a channel URL, not a video URL", ephemeral=True)
+        return
     if mode not in ["manual", "automatic"]:
-        raise ValueError("Mode must be 'manual' or 'automatic'")
-    
+        await interaction.response.send_message("Mode must be 'manual' or 'automatic'", ephemeral=True)
+        return
     # Show processing message
     processing_embed = discord.Embed(
         title="🔍 Processing Channel",
         description="Fetching channel information...",
         color=0xffff00
     )
-    await ctx.send(embed=processing_embed)
-    
+    await interaction.response.send_message(embed=processing_embed, ephemeral=True)
     # Parse channel ID
     channel_id = parse_channel_id(url)
     if not channel_id:
-        raise ValueError("Could not parse channel from URL")
-    
+        await interaction.followup.send("Could not parse channel from URL", ephemeral=True)
+        return
     # If it's a username/handle, convert to channel ID asynchronously
     if not channel_id.startswith("UC"):
         channel_id = await get_channel_id_from_username_async(channel_id)
         if not channel_id:
-            raise ValueError("Could not find YouTube channel")
-    
+            await interaction.followup.send("Could not find YouTube channel", ephemeral=True)
+            return
     # Fetch channel info to verify it exists asynchronously
     channel_info = await fetch_channel_info_async(channel_id)
     if not channel_info:
-        raise ValueError("Could not fetch channel information")
-    
+        await interaction.followup.send("Could not fetch channel information", ephemeral=True)
+        return
     with session_scope() as session:
         # Get or create user
         user = session.execute(
-            select(User).where(User.discord_user_id == str(ctx.author.id))
+            select(User).where(User.discord_user_id == str(interaction.user.id))
         ).scalar_one_or_none()
-        
         if user is None:
             user = User(
-                discord_user_id=str(ctx.author.id),
-                discord_username=ctx.author.display_name,
+                discord_user_id=str(interaction.user.id),
+                discord_username=interaction.user.display_name,
                 created_at=datetime.now(timezone.utc)
             )
             session.add(user)
             session.flush()
-        
         # Check if channel already exists
         existing_channel = session.execute(
             select(Channel).where(
@@ -397,10 +585,10 @@ async def verify_command(ctx: commands.Context, url: str, mode: str = "manual"):
                 )
             )
         ).scalar_one_or_none()
-        
         if existing_channel:
             if existing_channel.is_verified:
-                raise ValueError("Channel already verified!")
+                await interaction.followup.send("Channel already verified!", ephemeral=True)
+                return
             else:
                 # Update existing unverified channel
                 existing_channel.verification_code = generate_verification_code()
@@ -419,25 +607,21 @@ async def verify_command(ctx: commands.Context, url: str, mode: str = "manual"):
                 created_at=datetime.now(timezone.utc),
             )
             session.add(channel)
-        
         embed = discord.Embed(
             title="🔐 Verification Required",
-            description=f"Add `{verification_code}` to your channel description, then run `!done`",
+            description=f"Add `{verification_code}` to your channel description, then run /done",
             color=0xffff00
         )
-        
         embed.add_field(
             name="Mode",
-            value=f"{mode.title()} - {'Manual: Add videos with `!add`' if mode == 'manual' else 'Auto: Track all videos'}",
+            value=f"{mode.title()} - {'Manual: Add videos with /add' if mode == 'manual' else 'Auto: Track all videos'}",
             inline=False
         )
-        
         embed.add_field(
             name="⏰ Important",
-            value="**Wait 5 minutes** after adding the code to your description before running `!done`. The verification code will expire after 5 minutes.",
+            value="**Wait 5 minutes** after adding the code to your description before running /done. The verification code will expire after 5 minutes.",
             inline=False
         )
-        
         embed.add_field(
             name="📝 Steps",
             value=(
@@ -445,28 +629,23 @@ async def verify_command(ctx: commands.Context, url: str, mode: str = "manual"):
                 "2. Add it to your YouTube channel description\n"
                 "3. Save your channel description\n"
                 "4. **Wait 5 minutes** for YouTube to update\n"
-                "5. Run `!done` to complete verification"
+                "5. Run /done to complete verification"
             ),
             inline=False
         )
-        
-        await ctx.send(embed=embed)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
 
-@bot.command(name="done")
-@error_handler
-@require_clipper_role()
-async def done_command(ctx: commands.Context):
+@bot.tree.command(name="done", description="Complete verification after adding code to channel description.")
+async def done_command(interaction: discord.Interaction):
     """Complete verification after adding code to channel description"""
-    
     with session_scope() as session:
         user = session.execute(
-            select(User).where(User.discord_user_id == str(ctx.author.id))
+            select(User).where(User.discord_user_id == str(interaction.user.id))
         ).scalar_one_or_none()
-        
         if user is None:
-            raise ValueError("No verification in progress. Use `!verify` first")
-        
+            await interaction.response.send_message("No verification in progress. Use /verify first", ephemeral=True)
+            return
         # Get the most recent unverified channel
         channel = session.execute(
             select(Channel).where(
@@ -476,21 +655,18 @@ async def done_command(ctx: commands.Context):
                 )
             ).order_by(Channel.created_at.desc())
         ).scalar_one_or_none()
-        
         if channel is None:
-            raise ValueError("No verification in progress. Use `!verify` first")
-        
+            await interaction.response.send_message("No verification in progress. Use /verify first", ephemeral=True)
+            return
         # Show checking message
         checking_embed = discord.Embed(
             title="🔍 Checking Verification",
             description=f"Checking for code `{channel.verification_code}` in **{channel.channel_name}**...",
             color=0xffff00
         )
-        await ctx.send(embed=checking_embed)
-        
+        await interaction.response.send_message(embed=checking_embed, ephemeral=True)
         # Check verification with fresh data
         is_verified = check_verification(channel.channel_id, channel.verification_code)
-        
         if not is_verified:
             embed = discord.Embed(
                 title="⏳ Not Found",
@@ -504,13 +680,11 @@ async def done_command(ctx: commands.Context):
                 ),
                 color=0xffff00
             )
-            await ctx.send(embed=embed)
+            await interaction.followup.send(embed=embed, ephemeral=True)
             return
-        
         # Mark as verified
         channel.is_verified = True
         channel.last_sync_at = datetime.now(timezone.utc)
-        
         # If automatic mode, sync videos immediately
         synced_videos = 0
         if channel.verification_mode == "automatic":
@@ -1207,36 +1381,6 @@ async def quota_command(ctx: commands.Context):
 @bot.command(name="fix_monthly")
 @error_handler
 @require_clipper_role()
-async def fix_monthly_command(ctx: commands.Context):
-    """Fix monthly view counts by resetting them to track only incremental views from now on"""
-    
-    processing_embed = discord.Embed(
-        title="🔧 Fixing Monthly View Tracking",
-        description="Resetting monthly views to track only incremental views...",
-        color=0xffff00
-    )
-    processing_msg = await ctx.send(embed=processing_embed)
-    
-    with session_scope() as session:
-        user = session.execute(
-            select(User).where(User.discord_user_id == str(ctx.author.id))
-        ).scalar_one_or_none()
-        
-        if user is None:
-            raise ValueError("No videos tracked yet. Use `!add` to add your first video")
-        
-        # Get current month's monthly view records
-        now = datetime.now(timezone.utc)
-        monthly_views = session.execute(
-            select(MonthlyView).where(
-                and_(
-                    MonthlyView.user_id == user.id,
-                    MonthlyView.year == now.year,
-                    MonthlyView.month == now.month
-                )
-            )
-        ).scalars().all()
-        
         reset_count = 0
         for monthly_view in monthly_views:
             monthly_view.views = 0  # Reset to 0 to start tracking incremental views from now
@@ -1633,68 +1777,56 @@ async def channels_command(ctx: commands.Context):
         await ctx.send(embed=embed)
 
 
-@bot.command(name="videos")
-@error_handler
-@require_clipper_role()
-async def videos_command(ctx: commands.Context):
+
+@bot.tree.command(name="videos", description="List all your tracked videos.")
+async def videos_command(interaction: discord.Interaction):
     """List all your tracked videos"""
-    
     with session_scope() as session:
         user = session.execute(
-            select(User).where(User.discord_user_id == str(ctx.author.id))
+            select(User).where(User.discord_user_id == str(interaction.user.id))
         ).scalar_one_or_none()
-        
         if user is None:
-            raise ValueError("No videos found. Use `!add` to add your first video")
-        
+            await interaction.response.send_message("No videos found. Use /add to add your first video", ephemeral=True)
+            return
         videos = session.execute(
             select(Video).where(Video.user_id == user.id).order_by(Video.created_at.desc())
         ).scalars().all()
-        
         if not videos:
             embed = discord.Embed(
                 title="📺 No Videos",
-                description="Use `!add` to add your first video.",
+                description="Use /add to add your first video.",
                 color=0x00ff00
             )
-            await ctx.send(embed=embed)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return
-        
         embed = discord.Embed(
             title="📺 Your Videos",
             description=f"{len(videos)} video(s):",
             color=0x00ff00
         )
-        
         # Show top videos
         top_videos = sorted(videos, key=lambda x: x.last_view_count, reverse=True)[:5]
         video_text = []
         for i, video in enumerate(top_videos, 1):
             title = video.title or f"Video {video.video_id}"
             video_text.append(f"{i}. {title} - {format_number(video.last_view_count)}")
-        
         embed.add_field(name="Top Videos", value="\n".join(video_text), inline=False)
-        
         if len(videos) > 5:
             embed.add_field(name="More", value=f"+{len(videos) - 5} more videos", inline=False)
-        
-        await ctx.send(embed=embed)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-@bot.command(name="remove")
-@error_handler
-@require_clipper_role()
-async def remove_command(ctx: commands.Context, video_id: str):
+
+@bot.tree.command(name="remove", description="Remove a video from tracking.")
+async def remove_command(interaction: discord.Interaction, video_id: str):
     """Remove a video from tracking"""
-    
     with session_scope() as session:
         user = session.execute(
-            select(User).where(User.discord_user_id == str(ctx.author.id))
+            select(User).where(User.discord_user_id == str(interaction.user.id))
         ).scalar_one_or_none()
-        
         if user is None:
-            raise ValueError("No videos found")
-        
+            await interaction.response.send_message("No videos found", ephemeral=True)
+            return
         # Find video by video_id
         video = session.execute(
             select(Video).where(
@@ -1704,22 +1836,18 @@ async def remove_command(ctx: commands.Context, video_id: str):
                 )
             )
         ).scalar_one_or_none()
-        
         if not video:
-            raise ValueError(f"No video found with ID `{video_id}`. Use `!videos` to see your tracked videos")
-        
+            await interaction.response.send_message(f"No video found with ID `{video_id}`. Use /videos to see your tracked videos", ephemeral=True)
+            return
         title = video.title or f"Video {video.video_id}"
-        
         # Delete the video (cascade will handle monthly_views)
         session.delete(video)
-        
         embed = discord.Embed(
             title="✅ Removed",
             description=f"Removed **{title}** from tracking.",
             color=0x00ff00
         )
-        
-        await ctx.send(embed=embed)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 class TOSView(discord.ui.View):
