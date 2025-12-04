@@ -5,14 +5,23 @@ MVP focused on YouTube-only functionality.
 
 
 import os
-
-# ...existing imports...
-
-bot = commands.Bot(intents=intents)
-
 import discord
 from discord.ext import commands
 import discord.app_commands as app_commands
+import random
+import string
+import asyncio
+import signal
+import sys
+import atexit
+import warnings
+from datetime import datetime, timezone
+from typing import Optional
+from functools import wraps
+
+# Suppress aiohttp connector warnings
+warnings.filterwarnings("ignore", message="Unclosed connector")
+warnings.filterwarnings("ignore", message="Unclosed client session")
 
 intents = discord.Intents.default()
 intents.message_content = True
