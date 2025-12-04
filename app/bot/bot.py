@@ -40,11 +40,11 @@ def format_number(num: int) -> str:
 @bot.event
 async def on_ready():
     print(f"Bot is ready as {bot.user}")
-        try:
-            synced = await bot.tree.sync()
-            print(f"Synced {len(synced)} commands.")
-        except Exception as e:
-            print(f"Failed to sync commands: {e}")
+    try:
+        synced = await bot.tree.sync()
+        print(f"Synced {len(synced)} commands.")
+    except Exception as e:
+        print(f"Failed to sync commands: {e}")
 
 @bot.tree.command(name="help", description="Show help for all available commands.")
 async def help_command(interaction: discord.Interaction):
