@@ -19,6 +19,24 @@ from datetime import datetime, timezone
 from typing import Optional
 from functools import wraps
 
+# Add missing imports for database and models
+from sqlalchemy import select, and_
+from app.infrastructure.db import session_scope
+from app.models import User, Channel, Video, MonthlyView
+from sqlalchemy.orm import joinedload
+from sqlalchemy import func
+from app.services.youtube import fetch_video_stats, fetch_channel_info
+from app.services.quota_manager import quota_manager
+from app.tasks.refresh_stats import refresh_user_video_stats
+from app.tasks.automatic_tracking import sync_new_videos_for_user
+from app.utils.logger import bot_logger
+from app.config import settings
+
+from app.services.youtube import (
+    is_valid_youtube_url, is_channel_url, parse_channel_id, get_channel_id_from_username_async,
+    fetch_channel_info_async, check_verification, fetch_channel_videos, is_video_url, parse_video_id, get_video_channel_id
+)
+
 # Suppress aiohttp connector warnings
 warnings.filterwarnings("ignore", message="Unclosed connector")
 warnings.filterwarnings("ignore", message="Unclosed client session")
@@ -263,73 +281,6 @@ async def on_command_error(ctx: commands.Context, error: commands.CommandError):
         await ctx.send(embed=embed)
 
 
-@bot.command(name="help")
-@error_handler
-async def help_command(ctx: commands.Context):
-    """Show help for all available commands"""
-    embed = discord.Embed(
-        title="🤖 DataBot Commands",
-        description="Here are all available commands:",
-        color=0x00ff00
-    )
-    
-    # Core commands
-    embed.add_field(
-        name="📋 Core Commands",
-        value=(
-            "`!help` - Show this help message\n"
-            "`!register` - Accept Terms of Service to get clipper role\n"
-            "`!verify <url>` - Verify your YouTube channel\n"
-            "`!done` - Complete verification after adding code\n"
-            "`!add <url>` - Add a video from your verified channel"
-        ),
-        inline=False
-    )
-    
-    # Stats commands
-    embed.add_field(
-        name="📊 Stats Commands",
-        value=(
-            "`!stats` - Show live stats & auto-sync videos\n"
-            "`!report [month] [year]` - Generate live monthly report\n"
-            "`!monthly` - Show monthly summary\n"
-            "`!quota` - Show YouTube API quota status\n"
-            "`!test_api` - Test API functionality and quota system\n"
-            "`!fix_monthly` - Fix monthly view tracking (reset to incremental)\n"
-            "`!channels` - List your channels\n"
-            "`!videos` - List tracked videos"
-        ),
-        inline=False
-    )
-    
-    # Management commands
-    embed.add_field(
-        name="⚙️ Management",
-        value=(
-            "`!sync` - Sync all videos from verified channels\n"
-            "`!remove <video_id>` - Remove video from tracking\n"
-            "`!reset_monthly` - Reset monthly tracking to start fresh"
-        ),
-        inline=False
-    )
-    
-    embed.add_field(
-        name="💡 Tips",
-        value=(
-            "• **Start with `!register` to accept Terms of Service and get access**\n"
-            "• Use `!verify <url> automatic` for auto-tracking all videos\n"
-            "• Use `!verify <url> manual` for manual video tracking\n"
-            "• Add the verification code to your channel description\n"
-            "• **Wait 5 minutes** before running `!done`\n"
-            "• Use `!sync` to sync all videos from verified channels\n"
-            "• Use `!report [month] [year]` for historical data\n"
-            "• Example: `!report 12 2024` for December 2024"
-        ),
-        inline=False
-    )
-    
-    embed.set_footer(text="DataBot - Track your YouTube growth!")
-    await ctx.send(embed=embed)
 
 
 @bot.command(name="register")
@@ -1725,9 +1676,6 @@ async def videos_command(ctx: commands.Context):
             embed.add_field(name="More", value=f"+{len(videos) - 5} more videos", inline=False)
         
         await ctx.send(embed=embed)
-
-
-
 
 
 @bot.command(name="remove")
