@@ -12,11 +12,14 @@ import discord
 from discord.ext import commands
 import discord.app_commands as app_commands
 
+bot = commands.Bot(intents=intents)
+
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 
-bot = commands.Bot(intents=intents)
+# Add required command_prefix argument (slash commands will still work)
+bot = commands.Bot(command_prefix="/", intents=intents)
 
 # Global flag to track if bot is running
 _bot_running = False
