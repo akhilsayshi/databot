@@ -5,12 +5,21 @@ MVP focused on YouTube-only functionality.
 
 
 import os
+
 # ...existing imports...
+
+import discord
+from discord.ext import commands
+import discord.app_commands as app_commands
+
+intents = discord.Intents.default()
+intents.message_content = True
+intents.members = True
+
+bot = commands.Bot(intents=intents)
 
 # Global flag to track if bot is running
 _bot_running = False
-
-# ...existing code...
 
 # Place all slash command definitions below bot initialization
 
